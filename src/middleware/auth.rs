@@ -17,6 +17,7 @@ use std::future::{ready, Ready};
 pub struct Claims {
     pub sub: String,
     pub exp: usize,
+    pub token_type: String,
 }
 
 pub async fn validator(
@@ -30,6 +31,10 @@ pub async fn validator(
 
     match decode::<Claims>(token, &key, &Validation::default()) {
         Ok(claims) => {
+            if claims.claims.token_type != "access" {
+                return Err((ErrorUnauthorized("Invalid token type"), req));
+            }
+
             // Extract user_id from token and set it in request extensions
             let user_id = claims.claims.sub;
             req.extensions_mut().insert(user_id);

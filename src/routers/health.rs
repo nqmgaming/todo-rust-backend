@@ -15,6 +15,8 @@ pub struct HealthResponse {
     pub timestamp: u64,
     #[schema(example = "connected")]
     pub database: String,
+    #[schema(example = "connected")]
+    pub redis: String,
 }
 
 pub fn health_routes(cfg: &mut web::ServiceConfig) {
@@ -38,19 +40,21 @@ pub fn health_routes(cfg: &mut web::ServiceConfig) {
 )]
 #[get("/health")]
 async fn health(db: web::Data<Database>) -> HttpResponse {
-    // Kiểm tra kết nối cơ sở dữ liệu
     let db_status = match sqlx::query("SELECT 1").fetch_one(&db.pool).await {
         Ok(_) => "connected",
         Err(_) => "disconnected",
     };
 
-    // Lấy thời gian hiện tại
+    let redis_status = match db.redis_client.check_connection().await {
+        Ok(_) => "connected",
+        Err(_) => "disconnected",
+    };
+
     let timestamp = SystemTime::now()
         .duration_since(UNIX_EPOCH)
         .unwrap_or_default()
         .as_secs();
 
-    // Lấy phiên bản từ Cargo.toml
     let version = env!("CARGO_PKG_VERSION", "0.1.0");
 
     let health_data = HealthResponse {
@@ -58,6 +62,7 @@ async fn health(db: web::Data<Database>) -> HttpResponse {
         version: version.to_string(),
         timestamp,
         database: db_status.to_string(),
+        redis: redis_status.to_string(),
     };
 
     let response = ApiResponseHealthResponse {

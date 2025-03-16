@@ -14,6 +14,20 @@ pub enum UserError {
     NoSuchUserFound,
     #[display("Authentication failed")]
     AuthenticationFailure,
+    #[display("Username already exists")]
+    UserAlreadyExists,
+    #[display("Validation error: {}", _0)]
+    ValidationError(String),
+    #[display("Invalid refresh token")]
+    InvalidRefreshToken,
+    #[display("Token creation failed")]
+    TokenCreationFailure,
+    #[display("Password hashing failed")]
+    PasswordHashingFailure,
+    #[display("User not found")]
+    UserNotFound,
+    #[display("Invalid credentials")]
+    InvalidCredentials,
 }
 
 impl ResponseError for UserError {
@@ -22,6 +36,13 @@ impl ResponseError for UserError {
             UserError::UserCreationFailure => StatusCode::INTERNAL_SERVER_ERROR,
             UserError::NoSuchUserFound => StatusCode::NOT_FOUND,
             UserError::AuthenticationFailure => StatusCode::UNAUTHORIZED,
+            UserError::UserAlreadyExists => StatusCode::CONFLICT,
+            UserError::ValidationError(_) => StatusCode::BAD_REQUEST,
+            UserError::InvalidRefreshToken => StatusCode::UNAUTHORIZED,
+            UserError::TokenCreationFailure => StatusCode::INTERNAL_SERVER_ERROR,
+            UserError::PasswordHashingFailure => StatusCode::INTERNAL_SERVER_ERROR,
+            UserError::UserNotFound => StatusCode::NOT_FOUND,
+            UserError::InvalidCredentials => StatusCode::UNAUTHORIZED,
         }
     }
 

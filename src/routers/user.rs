@@ -1,8 +1,10 @@
 use crate::db::data_trait::user_data_trait::UserData;
 use crate::db::database::Database;
+use crate::db::redis_client::RedisClient;
 use crate::error::user_error::UserError;
 use crate::models::user::{
-    CreateUserRequest, LoginRequest, UpdateUserRequest, UpdateUserURL, User, UserResponse,
+    CreateUserRequest, LoginRequest, RefreshTokenRequest, TokenResponse, UpdateUserRequest,
+    UpdateUserURL, User, UserResponse,
 };
 use actix_web::{
     patch, post,
@@ -10,9 +12,8 @@ use actix_web::{
 };
 use bcrypt::{hash, verify, DEFAULT_COST};
 use chrono::{Duration, Utc};
-use jsonwebtoken::{encode, EncodingKey, Header};
+use jsonwebtoken::{decode, encode, DecodingKey, EncodingKey, Header, Validation};
 use serde::{Deserialize, Serialize};
-use sqlx::Row;
 use utoipa::ToSchema;
 use uuid::Uuid;
 use validator::Validate;
@@ -23,12 +24,120 @@ pub struct Claims {
     pub sub: String,
     #[schema(example = "1633027200")]
     pub exp: usize,
+    #[schema(example = "access")]
+    pub token_type: String,
+    #[schema(example = "550e8400-e29b-41d4-a716-446655440000")]
+    pub user_id: Option<String>,
+}
+
+// Hàm tiện ích để tạo JWT token
+fn generate_jwt_token(
+    subject: &str,
+    token_type: &str,
+    expires_in_hours: i64,
+    user_id: Option<&str>,
+) -> Result<String, UserError> {
+    let expiration = Utc::now()
+        .checked_add_signed(Duration::hours(expires_in_hours))
+        .expect("Valid timestamp")
+        .timestamp() as usize;
+
+    let claims = Claims {
+        sub: subject.to_string(),
+        exp: expiration,
+        token_type: token_type.to_string(),
+        user_id: user_id.map(|id| id.to_string()),
+    };
+
+    let secret = std::env::var("JWT_SECRET").unwrap_or_else(|_| "secret_key".into());
+
+    encode(
+        &Header::default(),
+        &claims,
+        &EncodingKey::from_secret(secret.as_ref()),
+    )
+    .map_err(|e| {
+        eprintln!("JWT token creation failed: {:?}", e);
+        UserError::AuthenticationFailure
+    })
+}
+
+// Hàm tiện ích để tạo cặp access token và refresh token
+async fn generate_token_pair(
+    user_id: &str,
+    redis_client: &RedisClient,
+) -> Result<(String, String), UserError> {
+    // Tạo token_id duy nhất cho refresh token
+    let token_id = Uuid::new_v4().to_string();
+
+    // Tạo access token như trước
+    let access_token = generate_jwt_token(user_id, "access", 1, None)?;
+
+    // Tạo refresh token với token_id trong payload và user_id trong claims
+    let refresh_token = generate_jwt_token(&token_id, "refresh", 24 * 7, Some(user_id))?;
+
+    // Lưu trạng thái token vào Redis
+    redis_client
+        .store_token_state(&token_id, user_id, 7 * 24 * 60 * 60) // 7 ngày
+        .await
+        .map_err(|e| {
+            eprintln!("Redis error: {:?}", e);
+            UserError::TokenCreationFailure
+        })?;
+
+    Ok((access_token, refresh_token))
+}
+
+// Hàm tiện ích để xác thực refresh token
+async fn validate_refresh_token(
+    token: &str,
+    redis_client: &RedisClient,
+) -> Result<String, UserError> {
+    // Giải mã JWT để lấy token_id và user_id
+    let secret = std::env::var("JWT_SECRET").unwrap_or_else(|_| "secret_key".into());
+
+    let token_data = decode::<Claims>(
+        token,
+        &DecodingKey::from_secret(secret.as_ref()),
+        &Validation::default(),
+    )
+    .map_err(|_| UserError::InvalidRefreshToken)?;
+
+    // Kiểm tra loại token
+    if token_data.claims.token_type != "refresh" {
+        return Err(UserError::InvalidRefreshToken);
+    }
+
+    let token_id = token_data.claims.sub;
+    let user_id = token_data
+        .claims
+        .user_id
+        .ok_or(UserError::InvalidRefreshToken)?;
+
+    // Kiểm tra và vô hiệu hóa token trong Redis
+    match redis_client.validate_and_invalidate_token(&token_id).await {
+        Ok(Some(stored_user_id)) => {
+            // Kiểm tra xem user_id trong token có khớp với user_id trong Redis không
+            if stored_user_id != user_id {
+                return Err(UserError::InvalidRefreshToken);
+            }
+            Ok(user_id)
+        }
+        Ok(None) => {
+            // Token không tồn tại hoặc đã bị vô hiệu hóa
+            Err(UserError::InvalidRefreshToken)
+        }
+        Err(e) => {
+            eprintln!("Redis error: {:?}", e);
+            Err(UserError::AuthenticationFailure)
+        }
+    }
 }
 
 pub fn user_routes(cfg: &mut actix_web::web::ServiceConfig) {
-    cfg.service(create_user);
-    cfg.service(login_user);
-    cfg.service(update_user);
+    cfg.service(register)
+        .service(login)
+        .service(refresh_token_endpoint);
 }
 
 /// Đăng ký người dùng mới
@@ -36,84 +145,66 @@ pub fn user_routes(cfg: &mut actix_web::web::ServiceConfig) {
 /// Endpoint này cho phép đăng ký một người dùng mới với tên người dùng và mật khẩu.
 #[utoipa::path(
     post,
-    path = "/api/v1/signup",
-    tag = "users",
+    path = "/api/v1/users",
     request_body = CreateUserRequest,
     responses(
-        (status = 200, description = "Người dùng được tạo thành công", body = UserResponse),
-        (status = 400, description = "Dữ liệu không hợp lệ"),
-        (status = 500, description = "Lỗi máy chủ")
-    )
+        (status = 201, description = "User created successfully", body = UserResponse),
+        (status = 400, description = "Invalid data"),
+        (status = 409, description = "User already exists"),
+        (status = 500, description = "Internal server error"),
+    ),
+    tag = "User"
 )]
-#[post("/signup")]
-async fn create_user(
+#[post("/register")]
+pub async fn register(
     body: Json<CreateUserRequest>,
     db: Data<Database>,
 ) -> Result<Json<UserResponse>, UserError> {
-    let is_valid = body.validate();
-    match is_valid {
-        Ok(_) => {
-            let username = body.username.clone();
-            let mut buffer = Uuid::encode_buffer();
-            let new_uuid = Uuid::new_v4()
-                .simple()
-                .encode_lower(&mut buffer)
-                .to_string();
-            // hash password
-            let hashed_password = match hash(&body.password, DEFAULT_COST) {
-                Ok(hash) => hash,
-                Err(e) => {
-                    eprintln!("Password hashing failed: {:?}", e);
-                    return Err(UserError::UserCreationFailure);
-                }
-            };
-            let expiration = Utc::now()
-                .checked_add_signed(Duration::hours(24))
-                .expect("Valid timestamp")
-                .timestamp() as usize;
+    // Validate request
+    body.validate()
+        .map_err(|e| UserError::ValidationError(e.to_string()))?;
 
-            let claims = Claims {
-                sub: new_uuid.clone(),
-                exp: expiration,
-            };
-
-            let secret = std::env::var("JWT_SECRET").unwrap_or_else(|_| "secret_key".into());
-            let token = match encode(
-                &Header::default(),
-                &claims,
-                &EncodingKey::from_secret(secret.as_ref()),
-            ) {
-                Ok(t) => t,
-                Err(e) => {
-                    eprintln!("JWT token creation failed: {:?}", e);
-                    return Err(UserError::UserCreationFailure);
-                }
-            };
-
-            let new_user = Database::add_user(
-                &db,
-                User::new(
-                    new_uuid,
-                    username,
-                    hashed_password,
-                    Utc::now().to_string(),
-                    Utc::now().to_string(),
-                ),
-            )
-            .await;
-
-            match new_user {
-                Some(user) => Ok(Json(UserResponse {
-                    username: user.username,
-                    access_token: token,
-                    created_at: user.created_at,
-                    updated_at: user.updated_at,
-                })),
-                None => Err(UserError::UserCreationFailure),
-            }
-        }
-        Err(_) => Err(UserError::UserCreationFailure),
+    // Check if user already exists
+    let existing_user = db.get_user_by_email(&body.email).await?;
+    if existing_user.is_some() {
+        return Err(UserError::UserAlreadyExists);
     }
+
+    // Hash password
+    let hashed_password = hash(&body.password, DEFAULT_COST).map_err(|e| {
+        eprintln!("Password hashing error: {:?}", e);
+        UserError::PasswordHashingFailure
+    })?;
+
+    // Create new user
+    let new_uuid = Uuid::new_v4().to_string();
+    let user = CreateUserRequest {
+        email: body.email.clone(),
+        password: hashed_password,
+        name: body.name.clone(),
+    };
+
+    // Save user to database
+    db.create_user(&new_uuid, &user).await?;
+
+    // Generate token pair
+    let (access_token, refresh_token_str) =
+        generate_token_pair(&new_uuid, &db.redis_client).await?;
+
+    let new_user = User::new(
+        new_uuid,
+        body.email.clone(),
+        body.name.clone(),
+        Utc::now().naive_utc(),
+        Utc::now().naive_utc(),
+    );
+    let user_response = UserResponse {
+        user: new_user.into(),
+        access_token: access_token,
+        refresh_token: refresh_token_str,
+        token_type: "Bearer".to_string(),
+    };
+    Ok(Json(user_response))
 }
 
 /// Đăng nhập người dùng
@@ -122,84 +213,93 @@ async fn create_user(
 #[utoipa::path(
     post,
     path = "/api/v1/login",
-    tag = "users",
     request_body = LoginRequest,
     responses(
-        (status = 200, description = "Đăng nhập thành công", body = UserResponse),
-        (status = 400, description = "Dữ liệu không hợp lệ"),
-        (status = 401, description = "Xác thực thất bại"),
-        (status = 404, description = "Không tìm thấy người dùng"),
-        (status = 500, description = "Lỗi máy chủ")
-    )
+        (status = 200, description = "Login successful", body = UserResponse),
+        (status = 400, description = "Invalid data"),
+        (status = 401, description = "Invalid credentials"),
+        (status = 404, description = "User not found"),
+        (status = 500, description = "Internal server error"),
+    ),
+    tag = "User"
 )]
 #[post("/login")]
-async fn login_user(
+pub async fn login(
     body: Json<LoginRequest>,
     db: Data<Database>,
 ) -> Result<Json<UserResponse>, UserError> {
-    // Find user by username
-    let query = "SELECT uuid, username, password, created_at::TEXT as created_at, updated_at::TEXT as updated_at FROM users WHERE username = $1";
+    // Validate request
+    body.validate()
+        .map_err(|e| UserError::ValidationError(e.to_string()))?;
 
-    let user_result = sqlx::query(query)
-        .bind(&body.username)
-        .fetch_optional(&db.pool)
-        .await;
+    // Get user by email
+    let user_option = db.get_user_by_email(&body.email).await?;
+    let user = match user_option {
+        Some(user) => user,
+        None => return Err(UserError::InvalidCredentials),
+    };
 
-    match user_result {
-        Ok(Some(row)) => {
-            let user = User {
-                uuid: row.get("uuid"),
-                username: row.get("username"),
-                password: row.get("password"),
-                created_at: row.get("created_at"),
-                updated_at: row.get("updated_at"),
-            };
+    // Verify password
+    let password_matches = verify(&body.password, &user.password).map_err(|e| {
+        eprintln!("Password verification error: {:?}", e);
+        UserError::AuthenticationFailure
+    })?;
 
-            // Verify password
-            match verify(&body.password, &user.password) {
-                Ok(true) => {
-                    // Generate JWT token
-                    let expiration = Utc::now()
-                        .checked_add_signed(Duration::hours(24))
-                        .expect("Valid timestamp")
-                        .timestamp() as usize;
-
-                    let claims = Claims {
-                        sub: user.uuid.clone(),
-                        exp: expiration,
-                    };
-
-                    let secret =
-                        std::env::var("JWT_SECRET").unwrap_or_else(|_| "secret_key".into());
-                    let token = match encode(
-                        &Header::default(),
-                        &claims,
-                        &EncodingKey::from_secret(secret.as_ref()),
-                    ) {
-                        Ok(t) => t,
-                        Err(e) => {
-                            eprintln!("JWT token creation failed: {:?}", e);
-                            return Err(UserError::AuthenticationFailure);
-                        }
-                    };
-
-                    Ok(Json(UserResponse {
-                        username: user.username,
-                        access_token: token,
-                        created_at: user.created_at,
-                        updated_at: user.updated_at,
-                    }))
-                }
-                Ok(false) => Err(UserError::AuthenticationFailure),
-                Err(_) => Err(UserError::AuthenticationFailure),
-            }
-        }
-        Ok(None) => Err(UserError::NoSuchUserFound),
-        Err(e) => {
-            eprintln!("Error finding user: {:?}", e);
-            Err(UserError::AuthenticationFailure)
-        }
+    if !password_matches {
+        return Err(UserError::InvalidCredentials);
     }
+
+    // Generate token pair
+    let (access_token, refresh_token_str) =
+        generate_token_pair(&user.uuid, &db.redis_client).await?;
+
+    let user_response = UserResponse {
+        user: user.into(),
+        access_token: access_token,
+        refresh_token: refresh_token_str,
+        token_type: "Bearer".to_string(),
+    };
+
+    Ok(Json(user_response))
+}
+
+/// Làm mới token
+///
+/// Endpoint này cho phép làm mới access token bằng refresh token.
+#[utoipa::path(
+    post,
+    path = "/api/v1/refresh",
+    request_body = RefreshTokenRequest,
+    responses(
+        (status = 200, description = "Token refreshed successfully", body = TokenResponse),
+        (status = 401, description = "Invalid refresh token"),
+        (status = 404, description = "User not found"),
+        (status = 500, description = "Internal server error"),
+    ),
+    tag = "User"
+)]
+#[post("/refresh")]
+pub async fn refresh_token_endpoint(
+    db: Data<Database>,
+    body: Json<RefreshTokenRequest>,
+) -> Result<Json<TokenResponse>, UserError> {
+    // Xác thực refresh token
+    let user_id = validate_refresh_token(&body.refresh_token, &db.redis_client).await?;
+
+    // Kiểm tra xem người dùng có tồn tại không
+    let user = db.get_user_by_id(&user_id).await?;
+    if user.is_none() {
+        return Err(UserError::UserNotFound);
+    }
+
+    // Tạo cặp token mới
+    let (access_token, refresh_token_str) = generate_token_pair(&user_id, &db.redis_client).await?;
+
+    Ok(Json(TokenResponse {
+        access_token,
+        refresh_token: refresh_token_str,
+        token_type: "Bearer".to_string(),
+    }))
 }
 
 /// Cập nhật thông tin người dùng
@@ -213,35 +313,28 @@ async fn login_user(
         ("uuid" = String, Path, description = "UUID của người dùng cần cập nhật")
     ),
     request_body = UpdateUserRequest,
-    security(
-        ("bearer_auth" = [])
-    ),
     responses(
-        (status = 200, description = "Người dùng được cập nhật thành công", body = User),
-        (status = 400, description = "Dữ liệu không hợp lệ"),
-        (status = 401, description = "Không được xác thực"),
-        (status = 404, description = "Không tìm thấy người dùng"),
-        (status = 500, description = "Lỗi máy chủ")
+        (status = 200, description = "User updated successfully", body = UserResponse),
+        (status = 400, description = "Invalid data"),
+        (status = 404, description = "User not found"),
+        (status = 500, description = "Internal server error"),
     )
 )]
 #[patch("/users/{uuid}")]
-async fn update_user(
+pub async fn update_user(
     update_user_url: Path<UpdateUserURL>,
     body: Json<UpdateUserRequest>,
     db: Data<Database>,
 ) -> Result<Json<User>, UserError> {
-    let is_valid = body.validate();
-    match is_valid {
-        Ok(_) => {
-            let updated_user =
-                Database::update_user(&db, update_user_url.uuid.clone(), body.username.clone())
-                    .await;
+    // Validate request
+    body.validate()
+        .map_err(|e| UserError::ValidationError(e.to_string()))?;
 
-            match updated_user {
-                Some(user) => Ok(Json(user)),
-                None => Err(UserError::NoSuchUserFound),
-            }
-        }
-        Err(_) => Err(UserError::NoSuchUserFound),
+    // Update user
+    let updated_user = db.update_user(&update_user_url.uuid, &body.email).await?;
+
+    match updated_user {
+        Some(user) => Ok(Json(user)),
+        None => Err(UserError::UserNotFound),
     }
 }

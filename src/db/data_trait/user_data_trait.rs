@@ -1,91 +1,132 @@
 use crate::db::database::Database;
-use crate::models::user::User;
+use crate::error::user_error::UserError;
+use crate::models::user::{CreateUserRequest, User};
 use async_trait::async_trait;
 use chrono::Utc;
 use sqlx::Row;
 
 #[async_trait]
 pub trait UserData {
-    async fn add_user(&self, user: User) -> Option<User>;
-    async fn update_user(&self, uuid: String, username: String) -> Option<User>;
+    async fn get_user_by_email(&self, email: &str) -> Result<Option<User>, UserError>;
+    async fn get_user_by_id(&self, uuid: &str) -> Result<Option<User>, UserError>;
+    async fn create_user(&self, uuid: &str, user: &CreateUserRequest) -> Result<(), UserError>;
+    async fn update_user(&self, uuid: &str, email: &str) -> Result<Option<User>, UserError>;
 }
 
 #[async_trait]
 impl UserData for Database {
-    async fn add_user(&self, user: User) -> Option<User> {
+    async fn get_user_by_email(&self, email: &str) -> Result<Option<User>, UserError> {
+        let query = "SELECT uuid, email, name, password, created_at::TEXT as created_at, updated_at::TEXT as updated_at FROM users WHERE email = $1";
+
+        match sqlx::query(query)
+            .bind(email)
+            .fetch_optional(&self.pool)
+            .await
+        {
+            Ok(Some(row)) => Ok(Some(User {
+                uuid: row.get("uuid"),
+                email: row.get("email"),
+                name: row.get("name"),
+                password: row.get("password"),
+                created_at: row.get("created_at"),
+                updated_at: row.get("updated_at"),
+            })),
+            Ok(None) => Ok(None),
+            Err(e) => {
+                eprintln!("Error getting user by email: {:?}", e);
+                Err(UserError::NoSuchUserFound)
+            }
+        }
+    }
+
+    async fn get_user_by_id(&self, uuid: &str) -> Result<Option<User>, UserError> {
+        let query = "SELECT uuid, email, name, password, created_at::TEXT as created_at, updated_at::TEXT as updated_at FROM users WHERE uuid = $1";
+
+        match sqlx::query(query)
+            .bind(uuid)
+            .fetch_optional(&self.pool)
+            .await
+        {
+            Ok(Some(row)) => Ok(Some(User {
+                uuid: row.get("uuid"),
+                email: row.get("email"),
+                name: row.get("name"),
+                password: row.get("password"),
+                created_at: row.get("created_at"),
+                updated_at: row.get("updated_at"),
+            })),
+            Ok(None) => Ok(None),
+            Err(e) => {
+                eprintln!("Error getting user by id: {:?}", e);
+                Err(UserError::NoSuchUserFound)
+            }
+        }
+    }
+
+    async fn create_user(&self, uuid: &str, user: &CreateUserRequest) -> Result<(), UserError> {
         // Check if user already exists
-        let check_query = "SELECT uuid FROM users WHERE username = $1";
+        let check_query = "SELECT uuid FROM users WHERE email = $1";
 
         let existing_user = sqlx::query(check_query)
-            .bind(&user.username)
+            .bind(&user.email)
             .fetch_optional(&self.pool)
             .await;
 
         match existing_user {
-            Ok(Some(_)) => {
-                eprintln!("User already exists");
-                None
-            }
+            Ok(Some(_)) => Err(UserError::UserAlreadyExists),
             Ok(None) => {
-                // Parse created_at and updated_at as timestamps
-                let created_at = match chrono::DateTime::parse_from_rfc3339(&user.created_at) {
-                    Ok(dt) => dt.with_timezone(&Utc),
-                    Err(_) => Utc::now(),
-                };
-
-                let updated_at = match chrono::DateTime::parse_from_rfc3339(&user.updated_at) {
-                    Ok(dt) => dt.with_timezone(&Utc),
-                    Err(_) => Utc::now(),
-                };
+                let now = Utc::now();
 
                 // Insert new user
-                let insert_query = "INSERT INTO users (uuid, username, password, created_at, updated_at) VALUES ($1, $2, $3, $4, $5) RETURNING uuid";
+                let insert_query = "INSERT INTO users (uuid, email, name, password, created_at, updated_at) VALUES ($1, $2, $3, $4, $5, $6)";
 
                 match sqlx::query(insert_query)
-                    .bind(&user.uuid)
-                    .bind(&user.username)
+                    .bind(uuid)
+                    .bind(&user.email)
+                    .bind(&user.name)
                     .bind(&user.password)
-                    .bind(created_at)
-                    .bind(updated_at)
-                    .fetch_one(&self.pool)
+                    .bind(now)
+                    .bind(now)
+                    .execute(&self.pool)
                     .await
                 {
-                    Ok(_) => Some(user),
+                    Ok(_) => Ok(()),
                     Err(e) => {
                         eprintln!("Error adding user: {:?}", e);
-                        None
+                        Err(UserError::UserCreationFailure)
                     }
                 }
             }
             Err(e) => {
                 eprintln!("Error checking existing user: {:?}", e);
-                None
+                Err(UserError::UserCreationFailure)
             }
         }
     }
 
-    async fn update_user(&self, uuid: String, username: String) -> Option<User> {
+    async fn update_user(&self, uuid: &str, email: &str) -> Result<Option<User>, UserError> {
         let now = Utc::now();
-        let query = "UPDATE users SET username = $1, updated_at = $2 WHERE uuid = $3 RETURNING uuid, username, password, created_at::TEXT as created_at, updated_at::TEXT as updated_at";
+        let query = "UPDATE users SET email = $1, updated_at = $2 WHERE uuid = $3 RETURNING uuid, email, name, password, created_at::TEXT as created_at, updated_at::TEXT as updated_at";
 
         match sqlx::query(query)
-            .bind(&username)
+            .bind(email)
             .bind(now)
-            .bind(&uuid)
+            .bind(uuid)
             .fetch_optional(&self.pool)
             .await
         {
-            Ok(Some(row)) => Some(User {
+            Ok(Some(row)) => Ok(Some(User {
                 uuid: row.get("uuid"),
-                username: row.get("username"),
+                email: row.get("email"),
+                name: row.get("name"),
                 password: row.get("password"),
                 created_at: row.get("created_at"),
                 updated_at: row.get("updated_at"),
-            }),
-            Ok(None) => None,
+            })),
+            Ok(None) => Ok(None),
             Err(e) => {
                 eprintln!("Error updating user: {:?}", e);
-                None
+                Err(UserError::NoSuchUserFound)
             }
         }
     }
