@@ -3,15 +3,17 @@ mod error;
 mod middleware;
 mod models;
 mod routers;
+mod services;
 mod swagger;
 
 use actix_cors::Cors;
+use actix_web::http::header;
 use actix_web::{middleware::Logger, web::Data, App, HttpServer};
 use actix_web_httpauth::middleware::HttpAuthentication;
 use db::database::Database;
 use dotenv::dotenv;
 use env_logger::Env;
-use log::{error, info, warn};
+use log::{info, warn};
 use middleware::auth::{validator, TodoOwnershipChecker};
 use routers::{health::health_routes, todo::todo_routes, user::user_routes};
 use swagger::ApiDoc;
@@ -74,24 +76,24 @@ async fn main() -> std::io::Result<()> {
     }
 
     info!("Initializing database connection...");
-    let database = match Database::init().await {
-        Ok(db) => {
-            info!("Database connection established successfully");
-            db
-        }
-        Err(e) => {
-            error!("Failed to initialize database: {}", e);
-            panic!("Database initialization failed");
-        }
-    };
+    let database = Database::init().await;
+    info!("Database connection established successfully");
 
     let db_data = Data::new(database);
 
     let server = HttpServer::new(move || {
         let cors = Cors::default()
-            .allow_any_origin()
+            .allowed_origin("http://localhost:8080")
+            .allowed_origin("https://todo.quickmem.app")
             .allow_any_method()
-            .allow_any_header();
+            .allowed_headers(vec![
+                header::AUTHORIZATION,
+                header::ACCEPT,
+                header::CONTENT_TYPE,
+            ])
+            .expose_headers(vec![header::AUTHORIZATION])
+            .supports_credentials()
+            .max_age(3600);
 
         let auth = HttpAuthentication::bearer(validator);
         let _todo_ownership_checker = TodoOwnershipChecker::new(db_data.clone());

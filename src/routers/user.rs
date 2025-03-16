@@ -6,17 +6,22 @@ use crate::models::user::{
     CreateUserRequest, LoginRequest, RefreshTokenRequest, TokenResponse, UpdateUserRequest,
     UpdateUserURL, User, UserResponse,
 };
+use crate::services::cache_service::CacheService;
 use actix_web::{
     patch, post,
     web::{Data, Json, Path},
 };
-use bcrypt::{hash, verify, DEFAULT_COST};
+use bcrypt::{hash, verify};
 use chrono::{Duration, Utc};
 use jsonwebtoken::{decode, encode, DecodingKey, EncodingKey, Header, Validation};
 use serde::{Deserialize, Serialize};
+use tokio;
 use utoipa::ToSchema;
 use uuid::Uuid;
 use validator::Validate;
+
+const HASH_COST: u32 = 8;
+const USER_CACHE_TTL: u64 = 3600;
 
 #[derive(Debug, Serialize, Deserialize, ToSchema)]
 pub struct Claims {
@@ -30,7 +35,6 @@ pub struct Claims {
     pub user_id: Option<String>,
 }
 
-// Hàm tiện ích để tạo JWT token
 fn generate_jwt_token(
     subject: &str,
     token_type: &str,
@@ -62,23 +66,33 @@ fn generate_jwt_token(
     })
 }
 
-// Hàm tiện ích để tạo cặp access token và refresh token
 async fn generate_token_pair(
     user_id: &str,
     redis_client: &RedisClient,
 ) -> Result<(String, String), UserError> {
-    // Tạo token_id duy nhất cho refresh token
     let token_id = Uuid::new_v4().to_string();
 
-    // Tạo access token như trước
-    let access_token = generate_jwt_token(user_id, "access", 1, None)?;
+    let user_id_clone = user_id.to_string();
 
-    // Tạo refresh token với token_id trong payload và user_id trong claims
-    let refresh_token = generate_jwt_token(&token_id, "refresh", 24 * 7, Some(user_id))?;
+    let access_token_future =
+        tokio::spawn(async move { generate_jwt_token(&user_id_clone, "access", 1, None) });
 
-    // Lưu trạng thái token vào Redis
+    let refresh_token_future = tokio::spawn({
+        let token_id = token_id.clone();
+        let user_id = user_id.to_string();
+        async move { generate_jwt_token(&token_id, "refresh", 24 * 7, Some(&user_id)) }
+    });
+
+    let access_token = access_token_future
+        .await
+        .map_err(|_| UserError::TokenCreationFailure)??;
+
+    let refresh_token = refresh_token_future
+        .await
+        .map_err(|_| UserError::TokenCreationFailure)??;
+
     redis_client
-        .store_token_state(&token_id, user_id, 7 * 24 * 60 * 60) // 7 ngày
+        .store_token_state(&token_id, user_id, 7 * 24 * 60 * 60)
         .await
         .map_err(|e| {
             eprintln!("Redis error: {:?}", e);
@@ -88,12 +102,10 @@ async fn generate_token_pair(
     Ok((access_token, refresh_token))
 }
 
-// Hàm tiện ích để xác thực refresh token
 async fn validate_refresh_token(
     token: &str,
     redis_client: &RedisClient,
 ) -> Result<String, UserError> {
-    // Giải mã JWT để lấy token_id và user_id
     let secret = std::env::var("JWT_SECRET").unwrap_or_else(|_| "secret_key".into());
 
     let token_data = decode::<Claims>(
@@ -103,7 +115,6 @@ async fn validate_refresh_token(
     )
     .map_err(|_| UserError::InvalidRefreshToken)?;
 
-    // Kiểm tra loại token
     if token_data.claims.token_type != "refresh" {
         return Err(UserError::InvalidRefreshToken);
     }
@@ -114,19 +125,14 @@ async fn validate_refresh_token(
         .user_id
         .ok_or(UserError::InvalidRefreshToken)?;
 
-    // Kiểm tra và vô hiệu hóa token trong Redis
     match redis_client.validate_and_invalidate_token(&token_id).await {
         Ok(Some(stored_user_id)) => {
-            // Kiểm tra xem user_id trong token có khớp với user_id trong Redis không
             if stored_user_id != user_id {
                 return Err(UserError::InvalidRefreshToken);
             }
             Ok(user_id)
         }
-        Ok(None) => {
-            // Token không tồn tại hoặc đã bị vô hiệu hóa
-            Err(UserError::InvalidRefreshToken)
-        }
+        Ok(None) => Err(UserError::InvalidRefreshToken),
         Err(e) => {
             eprintln!("Redis error: {:?}", e);
             Err(UserError::AuthenticationFailure)
@@ -170,8 +176,8 @@ pub async fn register(
         return Err(UserError::UserAlreadyExists);
     }
 
-    // Hash password
-    let hashed_password = hash(&body.password, DEFAULT_COST).map_err(|e| {
+    // Hash password with lower cost
+    let hashed_password = hash(&body.password, HASH_COST).map_err(|e| {
         eprintln!("Password hashing error: {:?}", e);
         UserError::PasswordHashingFailure
     })?;
@@ -192,12 +198,24 @@ pub async fn register(
         generate_token_pair(&new_uuid, &db.redis_client).await?;
 
     let new_user = User::new(
-        new_uuid,
+        new_uuid.clone(),
         body.email.clone(),
         body.name.clone(),
         Utc::now().naive_utc(),
         Utc::now().naive_utc(),
     );
+
+    // Cache user for future logins
+    let cache_key = format!("user:email:{}", body.email);
+    if let Err(e) = db
+        .redis_client
+        .set_cached(&cache_key, &new_user, USER_CACHE_TTL)
+        .await
+    {
+        eprintln!("Failed to cache user: {:?}", e);
+        // Continue even if caching fails
+    }
+
     let user_response = UserResponse {
         user: new_user.into(),
         access_token: access_token,
@@ -232,24 +250,50 @@ pub async fn login(
     body.validate()
         .map_err(|e| UserError::ValidationError(e.to_string()))?;
 
-    // Get user by email
-    let user_option = db.get_user_by_email(&body.email).await?;
-    let user = match user_option {
-        Some(user) => user,
-        None => return Err(UserError::InvalidCredentials),
+    let cache_key = format!("user:email:{}", body.email);
+    let cached_user = db.redis_client.get_cached::<User>(&cache_key).await;
+
+    let user = match cached_user {
+        Ok(Some(user)) => {
+            let password_matches = verify(&body.password, &user.password).map_err(|e| {
+                eprintln!("Password verification error: {:?}", e);
+                UserError::AuthenticationFailure
+            })?;
+
+            if !password_matches {
+                return Err(UserError::InvalidCredentials);
+            }
+            user
+        }
+        _ => {
+            let user_option = db.get_user_by_email(&body.email).await?;
+            let user = match user_option {
+                Some(user) => user,
+                None => return Err(UserError::InvalidCredentials),
+            };
+
+            let password_matches = verify(&body.password, &user.password).map_err(|e| {
+                eprintln!("Password verification error: {:?}", e);
+                UserError::AuthenticationFailure
+            })?;
+
+            if !password_matches {
+                return Err(UserError::InvalidCredentials);
+            }
+
+            if let Err(e) = db
+                .redis_client
+                .set_cached(&cache_key, &user, USER_CACHE_TTL)
+                .await
+            {
+                eprintln!("Failed to cache user: {:?}", e);
+                // Continue even if caching fails
+            }
+
+            user
+        }
     };
 
-    // Verify password
-    let password_matches = verify(&body.password, &user.password).map_err(|e| {
-        eprintln!("Password verification error: {:?}", e);
-        UserError::AuthenticationFailure
-    })?;
-
-    if !password_matches {
-        return Err(UserError::InvalidCredentials);
-    }
-
-    // Generate token pair
     let (access_token, refresh_token_str) =
         generate_token_pair(&user.uuid, &db.redis_client).await?;
 
@@ -283,16 +327,13 @@ pub async fn refresh_token_endpoint(
     db: Data<Database>,
     body: Json<RefreshTokenRequest>,
 ) -> Result<Json<TokenResponse>, UserError> {
-    // Xác thực refresh token
     let user_id = validate_refresh_token(&body.refresh_token, &db.redis_client).await?;
 
-    // Kiểm tra xem người dùng có tồn tại không
     let user = db.get_user_by_id(&user_id).await?;
     if user.is_none() {
         return Err(UserError::UserNotFound);
     }
 
-    // Tạo cặp token mới
     let (access_token, refresh_token_str) = generate_token_pair(&user_id, &db.redis_client).await?;
 
     Ok(Json(TokenResponse {

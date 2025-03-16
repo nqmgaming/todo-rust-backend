@@ -4,30 +4,25 @@ use actix_web::{
     HttpResponse, ResponseError,
 };
 use derive_more::Display;
+use redis::RedisError;
 use serde_json::json;
 
 #[derive(Debug, Display)]
 pub enum TodoError {
-    #[display("No todos found")]
-    NoTodosFound,
-    #[display("Todo creation failed")]
-    TodoCreationFailure,
-    #[display("Todo not found")]
-    NoSuchTodoFound,
-    #[display("Todo update failed")]
-    TodoUpdateFailure,
-    #[display("Todo deletion failed")]
-    TodoDeletionFailure,
+    #[display("Cache operation failed")]
+    CacheError,
+}
+
+impl From<RedisError> for TodoError {
+    fn from(_: RedisError) -> Self {
+        TodoError::CacheError
+    }
 }
 
 impl ResponseError for TodoError {
     fn status_code(&self) -> StatusCode {
         match self {
-            TodoError::NoTodosFound => StatusCode::NOT_FOUND,
-            TodoError::TodoCreationFailure => StatusCode::INTERNAL_SERVER_ERROR,
-            TodoError::NoSuchTodoFound => StatusCode::NOT_FOUND,
-            TodoError::TodoUpdateFailure => StatusCode::INTERNAL_SERVER_ERROR,
-            TodoError::TodoDeletionFailure => StatusCode::INTERNAL_SERVER_ERROR,
+            TodoError::CacheError => StatusCode::INTERNAL_SERVER_ERROR,
         }
     }
 

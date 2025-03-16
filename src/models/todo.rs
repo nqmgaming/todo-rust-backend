@@ -61,7 +61,7 @@ pub struct TodoResponseList {
     pub total_pages: i64,
 }
 
-#[derive(Deserialize, Serialize, ToSchema, Clone)]
+#[derive(Deserialize, Serialize, ToSchema, Clone, Debug)]
 pub struct PaginationParams {
     #[schema(example = "1")]
     pub page: Option<i64>,
@@ -78,7 +78,7 @@ impl Default for PaginationParams {
     }
 }
 
-#[derive(Deserialize, Serialize, ToSchema, Clone)]
+#[derive(Deserialize, Serialize, ToSchema, Clone, Debug)]
 pub struct TodoFilter {
     #[schema(example = "Rust")]
     pub search: Option<String>,
@@ -101,7 +101,7 @@ impl Default for TodoFilter {
     }
 }
 
-#[derive(Deserialize, Serialize, ToSchema)]
+#[derive(Deserialize, Serialize, ToSchema, Debug)]
 pub struct TodoQueryParams {
     #[serde(flatten)]
     pub pagination: PaginationParams,
@@ -115,6 +115,21 @@ impl Default for TodoQueryParams {
             pagination: PaginationParams::default(),
             filter: TodoFilter::default(),
         }
+    }
+}
+
+impl std::fmt::Display for TodoQueryParams {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        write!(
+            f,
+            "page={};page_size={};search={};is_completed={};sort_by={};sort_order={}",
+            self.pagination.page.unwrap_or(1),
+            self.pagination.page_size.unwrap_or(10),
+            self.filter.search.as_deref().unwrap_or(""),
+            self.filter.is_completed.unwrap_or(false),
+            self.filter.sort_by.as_deref().unwrap_or("created_at"),
+            self.filter.sort_order.as_deref().unwrap_or("desc")
+        )
     }
 }
 
