@@ -13,9 +13,9 @@ use chrono::{Duration, Utc};
 use jsonwebtoken::{encode, EncodingKey, Header};
 use serde::{Deserialize, Serialize};
 use sqlx::Row;
+use utoipa::ToSchema;
 use uuid::Uuid;
 use validator::Validate;
-use utoipa::ToSchema;
 
 #[derive(Debug, Serialize, Deserialize, ToSchema)]
 pub struct Claims {
@@ -139,12 +139,12 @@ async fn login_user(
 ) -> Result<Json<UserResponse>, UserError> {
     // Find user by username
     let query = "SELECT uuid, username, password, created_at::TEXT as created_at, updated_at::TEXT as updated_at FROM users WHERE username = $1";
-    
+
     let user_result = sqlx::query(query)
         .bind(&body.username)
         .fetch_optional(&db.pool)
         .await;
-        
+
     match user_result {
         Ok(Some(row)) => {
             let user = User {
@@ -154,7 +154,7 @@ async fn login_user(
                 created_at: row.get("created_at"),
                 updated_at: row.get("updated_at"),
             };
-            
+
             // Verify password
             match verify(&body.password, &user.password) {
                 Ok(true) => {
@@ -169,7 +169,8 @@ async fn login_user(
                         exp: expiration,
                     };
 
-                    let secret = std::env::var("JWT_SECRET").unwrap_or_else(|_| "secret_key".into());
+                    let secret =
+                        std::env::var("JWT_SECRET").unwrap_or_else(|_| "secret_key".into());
                     let token = match encode(
                         &Header::default(),
                         &claims,
@@ -181,18 +182,18 @@ async fn login_user(
                             return Err(UserError::AuthenticationFailure);
                         }
                     };
-                    
+
                     Ok(Json(UserResponse {
                         username: user.username,
                         access_token: token,
                         created_at: user.created_at,
                         updated_at: user.updated_at,
                     }))
-                },
+                }
                 Ok(false) => Err(UserError::AuthenticationFailure),
                 Err(_) => Err(UserError::AuthenticationFailure),
             }
-        },
+        }
         Ok(None) => Err(UserError::NoSuchUserFound),
         Err(e) => {
             eprintln!("Error finding user: {:?}", e);

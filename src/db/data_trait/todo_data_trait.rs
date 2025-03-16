@@ -28,14 +28,12 @@ impl TodoData for Database {
         let page_size = pagination.page_size.unwrap_or(10);
         let offset = (page - 1) * page_size;
         
-        // Xây dựng truy vấn với các điều kiện lọc
         let mut count_query = "SELECT COUNT(*) as total FROM todos WHERE owner_id = $1".to_string();
         let mut query = "SELECT uuid, title, description, is_completed, owner_id, created_at, updated_at FROM todos WHERE owner_id = $1".to_string();
         
         let mut params: Vec<String> = vec![user_id.clone()];
         let mut param_index = 2; // Bắt đầu từ $2
         
-        // Thêm điều kiện tìm kiếm
         if let Some(search) = filter.search {
             let search_condition = format!(" AND (title ILIKE ${} OR description ILIKE ${})", param_index, param_index);
             count_query.push_str(&search_condition);
@@ -44,7 +42,6 @@ impl TodoData for Database {
             param_index += 1;
         }
         
-        // Thêm điều kiện lọc theo trạng thái hoàn thành
         if let Some(is_completed) = filter.is_completed {
             let completed_condition = format!(" AND is_completed = ${}", param_index);
             count_query.push_str(&completed_condition);
@@ -53,11 +50,9 @@ impl TodoData for Database {
             param_index += 1;
         }
         
-        // Thêm sắp xếp
         let sort_by = filter.sort_by.unwrap_or_else(|| "created_at".to_string());
         let sort_order = filter.sort_order.unwrap_or_else(|| "desc".to_string());
         
-        // Kiểm tra tính hợp lệ của sort_by để tránh SQL injection
         let valid_sort_columns = vec!["created_at", "updated_at", "title", "is_completed"];
         let sort_by = if valid_sort_columns.contains(&sort_by.as_str()) {
             sort_by
@@ -65,7 +60,6 @@ impl TodoData for Database {
             "created_at".to_string()
         };
         
-        // Kiểm tra tính hợp lệ của sort_order
         let sort_order = if sort_order.to_lowercase() == "asc" {
             "ASC"
         } else {
@@ -74,7 +68,6 @@ impl TodoData for Database {
         
         query.push_str(&format!(" ORDER BY {} {} LIMIT ${} OFFSET ${}", sort_by, sort_order, param_index, param_index + 1));
         
-        // Lấy tổng số todo
         let mut count_query_builder = sqlx::query(&count_query);
         for param in &params {
             count_query_builder = count_query_builder.bind(param);
@@ -87,7 +80,6 @@ impl TodoData for Database {
             
         let total_pages = (total + page_size - 1) / page_size; // Làm tròn lên
         
-        // Lấy danh sách todo với phân trang và lọc
         let mut query_builder = sqlx::query(&query);
         for param in &params {
             query_builder = query_builder.bind(param);

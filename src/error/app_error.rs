@@ -1,10 +1,10 @@
+use crate::models::todo::ApiResponse;
 use actix_web::body::BoxBody;
 use actix_web::{
     http::{header::ContentType, StatusCode},
     HttpResponse, ResponseError,
 };
 use std::fmt;
-use crate::models::todo::ApiResponse;
 
 #[derive(Debug)]
 pub struct AppError {
@@ -68,15 +68,23 @@ impl From<sqlx::Error> for AppError {
             sqlx::Error::RowNotFound => Self::not_found("Resource not found"),
             sqlx::Error::Database(db_error) => {
                 if let Some(code) = db_error.code() {
-                    if code == "23503" { // Foreign key violation
-                        return Self::bad_request(format!("Foreign key constraint violation: {}", db_error.message()));
+                    if code == "23503" {
+                        // Foreign key violation
+                        return Self::bad_request(format!(
+                            "Foreign key constraint violation: {}",
+                            db_error.message()
+                        ));
                     }
-                    if code == "23505" { // Unique violation
-                        return Self::bad_request(format!("Unique constraint violation: {}", db_error.message()));
+                    if code == "23505" {
+                        // Unique violation
+                        return Self::bad_request(format!(
+                            "Unique constraint violation: {}",
+                            db_error.message()
+                        ));
                     }
                 }
                 Self::internal_server_error(format!("Database error: {}", db_error.message()))
-            },
+            }
             _ => Self::internal_server_error(format!("Database error: {}", error)),
         }
     }
@@ -92,4 +100,4 @@ impl From<jsonwebtoken::errors::Error> for AppError {
     fn from(error: jsonwebtoken::errors::Error) -> Self {
         Self::unauthorized(format!("JWT error: {}", error))
     }
-} 
+}

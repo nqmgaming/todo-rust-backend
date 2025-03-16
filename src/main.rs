@@ -10,13 +10,13 @@ use actix_web::{middleware::Logger, web::Data, App, HttpServer};
 use actix_web_httpauth::middleware::HttpAuthentication;
 use db::database::Database;
 use dotenv::dotenv;
-use middleware::auth::{validator, TodoOwnershipChecker};
-use routers::{todo::todo_routes, user::user_routes, health::health_routes};
 use env_logger::Env;
-use log::{info, warn, error};
+use log::{error, info, warn};
+use middleware::auth::{validator, TodoOwnershipChecker};
+use routers::{health::health_routes, todo::todo_routes, user::user_routes};
+use swagger::ApiDoc;
 use utoipa::OpenApi;
 use utoipa_swagger_ui::SwaggerUi;
-use swagger::ApiDoc;
 
 #[actix_web::main]
 async fn main() -> std::io::Result<()> {
@@ -72,7 +72,7 @@ async fn main() -> std::io::Result<()> {
         Ok(db) => {
             info!("Database connection established successfully");
             db
-        },
+        }
         Err(e) => {
             error!("Failed to initialize database: {}", e);
             panic!("Database initialization failed");
@@ -88,7 +88,7 @@ async fn main() -> std::io::Result<()> {
             .allow_any_header();
 
         let auth = HttpAuthentication::bearer(validator);
-        let todo_ownership_checker = TodoOwnershipChecker::new(db_data.clone());
+        let _todo_ownership_checker = TodoOwnershipChecker::new(db_data.clone());
 
         App::new()
             .wrap(cors)
@@ -96,24 +96,22 @@ async fn main() -> std::io::Result<()> {
             .app_data(db_data.clone())
             .service(
                 SwaggerUi::new("/swagger-ui/{_:.*}")
-                    .url("/api-docs/openapi.json", ApiDoc::openapi())
+                    .url("/api-docs/openapi.json", ApiDoc::openapi()),
             )
             .service(
                 actix_web::web::scope("/api")
                     .configure(health_routes)
                     .service(
-                        actix_web::web::scope("/v1")
-                            .configure(user_routes)
-                            .service(
-                                actix_web::web::scope("/todos")
-                                    .wrap(auth)
-                                    .configure(todo_routes)
-                            )
-                    )
+                        actix_web::web::scope("/v1").configure(user_routes).service(
+                            actix_web::web::scope("/todos")
+                                .wrap(auth)
+                                .configure(todo_routes),
+                        ),
+                    ),
             )
     })
     .bind(("127.0.0.1", 8080))?;
-    
+
     info!("Server started at http://127.0.0.1:8080");
     info!("Swagger UI available at http://127.0.0.1:8080/swagger-ui/");
     server.run().await

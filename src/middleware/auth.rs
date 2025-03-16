@@ -1,17 +1,17 @@
+use crate::db::data_trait::todo_data_trait::TodoData;
+use crate::db::database::Database;
+use crate::error::AppError;
 use actix_web::error::ErrorUnauthorized;
 use actix_web::{dev::ServiceRequest, Error, HttpMessage};
-use actix_web_httpauth::extractors::bearer::BearerAuth;
-use jsonwebtoken::{decode, DecodingKey, Validation};
-use serde::{Deserialize, Serialize};
-use std::future::{ready, Ready};
 use actix_web::{
     dev::{forward_ready, Service, ServiceResponse, Transform},
     Error as ActixError,
 };
+use actix_web_httpauth::extractors::bearer::BearerAuth;
 use futures_util::future::LocalBoxFuture;
-use crate::db::database::Database;
-use crate::db::data_trait::todo_data_trait::TodoData;
-use crate::error::AppError;
+use jsonwebtoken::{decode, DecodingKey, Validation};
+use serde::{Deserialize, Serialize};
+use std::future::{ready, Ready};
 
 #[derive(Debug, Serialize, Deserialize)]
 pub struct Claims {
@@ -19,9 +19,12 @@ pub struct Claims {
     pub exp: usize,
 }
 
-pub async fn validator(req: ServiceRequest, credentials: BearerAuth) -> Result<ServiceRequest, (Error, ServiceRequest)> {
+pub async fn validator(
+    req: ServiceRequest,
+    credentials: BearerAuth,
+) -> Result<ServiceRequest, (Error, ServiceRequest)> {
     let token = credentials.token();
-    
+
     let secret = std::env::var("JWT_SECRET").unwrap_or_else(|_| "secret_key".into());
     let key = DecodingKey::from_secret(secret.as_ref());
 
@@ -31,12 +34,11 @@ pub async fn validator(req: ServiceRequest, credentials: BearerAuth) -> Result<S
             let user_id = claims.claims.sub;
             req.extensions_mut().insert(user_id);
             Ok(req)
-        },
+        }
         Err(_) => Err((ErrorUnauthorized("Invalid token"), req)),
     }
 }
 
-// Middleware để kiểm tra quyền sở hữu todo
 pub struct TodoOwnershipChecker {
     db: actix_web::web::Data<Database>,
 }
@@ -89,34 +91,41 @@ where
         let service = self.service.clone();
 
         Box::pin(async move {
-            // Chỉ kiểm tra quyền sở hữu cho các yêu cầu PATCH, DELETE đến /todos/{uuid}
             let path = req.path();
-            if (req.method() == actix_web::http::Method::PATCH || req.method() == actix_web::http::Method::DELETE) 
-                && path.starts_with("/api/v1/todos/") && path.len() > 14 {
-                
+            if (req.method() == actix_web::http::Method::PATCH
+                || req.method() == actix_web::http::Method::DELETE)
+                && path.starts_with("/api/v1/todos/")
+                && path.len() > 14
+            {
                 let todo_id = path[14..].to_string();
-                
-                // Lấy user_id từ request extensions
+
                 let extensions = req.extensions();
                 let user_id = match extensions.get::<String>() {
                     Some(id) => id.clone(),
-                    None => return Err(AppError::unauthorized("User ID not found in request").into()),
+                    None => {
+                        return Err(AppError::unauthorized("User ID not found in request").into())
+                    }
                 };
-                
-                // Kiểm tra quyền sở hữu todo
+
                 match Database::get_one_todo(&db, todo_id.clone()).await {
                     Ok(todo) => {
                         if todo.user_id != user_id {
-                            return Err(AppError::unauthorized("You don't have permission to access this todo").into());
+                            return Err(AppError::unauthorized(
+                                "You don't have permission to access this todo",
+                            )
+                            .into());
                         }
-                    },
+                    }
                     Err(_) => {
-                        // Nếu todo không tồn tại, cho phép request tiếp tục
-                        // Hàm xử lý sẽ trả về lỗi not found sau
+                        return Err(AppError::not_found(format!(
+                            "Todo with id {} not found",
+                            todo_id
+                        ))
+                        .into());
                     }
                 }
             }
-            
+
             service.call(req).await
         })
     }

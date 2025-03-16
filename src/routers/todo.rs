@@ -1,8 +1,12 @@
 use crate::db::data_trait::todo_data_trait::TodoData;
 use crate::db::database::Database;
 use crate::error::AppError;
-use crate::models::todo::{CreateTodoRequest, GetTodoURL, TodoQueryParams, TodoResponse, UpdateTodoRequest, UpdateTodoURL};
-use crate::swagger::{ApiResponseDeleteTodoResponse, ApiResponseTodoResponse, ApiResponseTodoResponseList, ApiResponseEmpty};
+use crate::models::todo::{
+    CreateTodoRequest, GetTodoURL, TodoQueryParams, TodoResponse, UpdateTodoRequest, UpdateTodoURL,
+};
+use crate::swagger::{
+    ApiResponseDeleteTodoResponse, ApiResponseTodoResponse, ApiResponseTodoResponseList,
+};
 use actix_web::http::StatusCode;
 use actix_web::web::{Data, Json, Path, Query};
 use actix_web::{delete, get, patch, post, HttpMessage, HttpRequest};
@@ -21,8 +25,9 @@ impl IntoParams for TodoQueryParams {
     fn into_params(
         parameter_in_provider: impl Fn() -> Option<utoipa::openapi::path::ParameterIn>,
     ) -> Vec<utoipa::openapi::path::Parameter> {
-        let parameter_in = parameter_in_provider().unwrap_or(utoipa::openapi::path::ParameterIn::Query);
-        
+        let parameter_in =
+            parameter_in_provider().unwrap_or(utoipa::openapi::path::ParameterIn::Query);
+
         vec![
             // Pagination params
             {
@@ -33,8 +38,8 @@ impl IntoParams for TodoQueryParams {
                         utoipa::openapi::schema::ObjectBuilder::new()
                             .schema_type(utoipa::openapi::schema::SchemaType::Integer)
                             .example(Some(serde_json::json!(1)))
-                            .build()
-                    )
+                            .build(),
+                    ),
                 ));
                 param.parameter_in = parameter_in.clone();
                 param
@@ -47,8 +52,8 @@ impl IntoParams for TodoQueryParams {
                         utoipa::openapi::schema::ObjectBuilder::new()
                             .schema_type(utoipa::openapi::schema::SchemaType::Integer)
                             .example(Some(serde_json::json!(10)))
-                            .build()
-                    )
+                            .build(),
+                    ),
                 ));
                 param.parameter_in = parameter_in.clone();
                 param
@@ -62,8 +67,8 @@ impl IntoParams for TodoQueryParams {
                         utoipa::openapi::schema::ObjectBuilder::new()
                             .schema_type(utoipa::openapi::schema::SchemaType::String)
                             .example(Some(serde_json::json!("Rust")))
-                            .build()
-                    )
+                            .build(),
+                    ),
                 ));
                 param.parameter_in = parameter_in.clone();
                 param
@@ -76,8 +81,8 @@ impl IntoParams for TodoQueryParams {
                         utoipa::openapi::schema::ObjectBuilder::new()
                             .schema_type(utoipa::openapi::schema::SchemaType::Boolean)
                             .example(Some(serde_json::json!(false)))
-                            .build()
-                    )
+                            .build(),
+                    ),
                 ));
                 param.parameter_in = parameter_in.clone();
                 param
@@ -90,8 +95,8 @@ impl IntoParams for TodoQueryParams {
                         utoipa::openapi::schema::ObjectBuilder::new()
                             .schema_type(utoipa::openapi::schema::SchemaType::String)
                             .example(Some(serde_json::json!("created_at")))
-                            .build()
-                    )
+                            .build(),
+                    ),
                 ));
                 param.parameter_in = parameter_in.clone();
                 param
@@ -104,8 +109,8 @@ impl IntoParams for TodoQueryParams {
                         utoipa::openapi::schema::ObjectBuilder::new()
                             .schema_type(utoipa::openapi::schema::SchemaType::String)
                             .example(Some(serde_json::json!("desc")))
-                            .build()
-                    )
+                            .build(),
+                    ),
                 ));
                 param.parameter_in = parameter_in.clone();
                 param
@@ -146,12 +151,13 @@ async fn get_todos(
         .ok_or_else(|| AppError::new(StatusCode::UNAUTHORIZED, "User ID not found in request"))?;
 
     let todos = Database::get_all_todos(
-        &db, 
-        user_id.to_string(), 
-        query_params.pagination.clone(), 
-        query_params.filter.clone()
-    ).await?;
-    
+        &db,
+        user_id.to_string(),
+        query_params.pagination.clone(),
+        query_params.filter.clone(),
+    )
+    .await?;
+
     Ok(Json(ApiResponseTodoResponseList {
         success: true,
         message: "Todos retrieved successfully".to_string(),
@@ -191,7 +197,7 @@ async fn get_todo(
         .ok_or_else(|| AppError::new(StatusCode::UNAUTHORIZED, "User ID not found in request"))?;
 
     let todo = Database::get_one_todo(&db, get_todo_url.uuid.clone()).await?;
-    
+
     Ok(Json(ApiResponseTodoResponse {
         success: true,
         message: "Todo retrieved successfully".to_string(),
@@ -228,7 +234,7 @@ async fn create_todo(
         .ok_or_else(|| AppError::new(StatusCode::UNAUTHORIZED, "User ID not found in request"))?;
 
     let todo = Database::add_todo(&db, user_id.to_string(), body.into_inner()).await?;
-    
+
     Ok(Json(ApiResponseTodoResponse {
         success: true,
         message: "Todo created successfully".to_string(),
@@ -275,10 +281,11 @@ async fn update_todo(
         body.title.clone(),
         body.description.clone(),
         body.is_completed,
-    ).await?;
-    
+    )
+    .await?;
+
     let todo_response = TodoResponse::from(todo);
-    
+
     Ok(Json(ApiResponseTodoResponse {
         success: true,
         message: "Todo updated successfully".to_string(),
@@ -318,7 +325,7 @@ async fn delete_todo(
         .ok_or_else(|| AppError::new(StatusCode::UNAUTHORIZED, "User ID not found in request"))?;
 
     let response = Database::delete_todo(&db, todo_url.uuid.clone()).await?;
-    
+
     Ok(Json(ApiResponseDeleteTodoResponse {
         success: true,
         message: "Todo deleted successfully".to_string(),

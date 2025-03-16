@@ -45,6 +45,10 @@ use utoipa::OpenApi;
         (name = "todos", description = "Todo management endpoints"),
         (name = "users", description = "User management endpoints"),
     ),
+    security(
+        (),
+        ("bearer_auth" = [])
+    ),
     info(
         title = "Rust Backend API",
         version = "1.0.0",
@@ -55,8 +59,8 @@ use utoipa::OpenApi;
         ),
         contact(
             name = "API Support",
-            email = "support@example.com",
-            url = "https://example.com/support"
+            email = "support@quickmem.app",
+            url = "https://quickmem.app"
         )
     )
 )]
