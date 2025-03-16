@@ -1,5 +1,5 @@
 use crate::error::AppError;
-use log::{error, info, warn};
+use log::{error, info};
 use sqlx::{postgres::PgPoolOptions, Pool, Postgres};
 use std::env;
 

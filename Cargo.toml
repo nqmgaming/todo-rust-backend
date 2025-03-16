@@ -12,6 +12,7 @@ log = "0.4.25"
 serde = { version = "1.0.193", features = ["derive"] }
 serde_json = "1.0.108"
 uuid = { version = "1.6.1", features = ["v4", "fast-rng"] }
+validator = { version = "0.20.0", features = ["derive"] }
 futures = "0.3.29"
 actix-service = "2.0.2"
 bcrypt = "0.17.0"
@@ -22,6 +23,6 @@ actix-cors = "0.7.1"
 actix-web-httpauth = "0.8.1"
 # PostgreSQL dependencies
 sqlx = { version = "0.8.3", features = ["runtime-tokio", "tls-rustls", "postgres", "uuid", "chrono", "json"] }
-utoipa = { version = "5.3.1", features = ["actix_extras"] }
-utoipa-swagger-ui = { version = "9.0.0", features = ["actix-web"] }
+utoipa = { version = "3.5.0", features = ["actix_extras"] }
+utoipa-swagger-ui = { version = "3.1.5", features = ["actix-web"] }
 futures-util = "0.3.29"
