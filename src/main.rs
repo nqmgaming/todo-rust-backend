@@ -34,7 +34,7 @@ async fn main() -> std::io::Result<()> {
     if std::env::var("DATABASE_URL").is_err() {
         let db_host = std::env::var("DB_HOST").unwrap_or_else(|_| {
             warn!("DB_HOST not set, using default");
-            "aws-0-ap-southeast-1.pooler.supabase.com".to_string()
+            "localhost".to_string()
         });
         let db_port = std::env::var("DB_PORT").unwrap_or_else(|_| {
             warn!("DB_PORT not set, using default");
@@ -46,11 +46,11 @@ async fn main() -> std::io::Result<()> {
         });
         let db_user = std::env::var("DB_USER").unwrap_or_else(|_| {
             warn!("DB_USER not set, using default");
-            "postgres.iekrcafkmspmkhplrawo".to_string()
+            "postgres".to_string()
         });
         let db_password = std::env::var("DB_PASSWORD").unwrap_or_else(|_| {
             warn!("DB_PASSWORD not set, using default");
-            "JBAzgdnhwQtQ4nNv".to_string()
+            "postgres".to_string()
         });
 
         let database_url = format!(
@@ -64,7 +64,13 @@ async fn main() -> std::io::Result<()> {
     // Set JWT_SECRET if not set
     if std::env::var("JWT_SECRET").is_err() {
         warn!("JWT_SECRET not set, using default (insecure)");
-        std::env::set_var("JWT_SECRET", "your_jwt_secret_key");
+        std::env::set_var("JWT_SECRET", "todoapp");
+    }
+
+    // Set Redis URL if not set
+    if std::env::var("REDIS_URL").is_err() {
+        warn!("REDIS_URL not set, using default");
+        std::env::set_var("REDIS_URL", "redis://127.0.0.1:6379");
     }
 
     info!("Initializing database connection...");

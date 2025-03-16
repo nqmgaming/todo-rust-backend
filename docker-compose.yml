@@ -10,6 +10,7 @@ services:
       - REDIS_URL=${REDIS_URL}
       - JWT_SECRET=${JWT_SECRET}
       - RUST_LOG=${RUST_LOG}
+      - CARGO_PKG_VERSION=${CARGO_PKG_VERSION}
     networks:
       - app-network
 
