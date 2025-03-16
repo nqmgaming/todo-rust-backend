@@ -232,7 +232,7 @@ The project can be containerized and deployed using Docker:
 
 ```bash
 # Build and run with docker-compose
-docker-compose up -d
+docker compose up -d
 
 # Or build and run manually
 docker build -t rust-backend .
