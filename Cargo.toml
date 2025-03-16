@@ -23,6 +23,11 @@ actix-cors = "0.7.1"
 actix-web-httpauth = "0.8.1"
 # PostgreSQL dependencies
 sqlx = { version = "0.8.3", features = ["runtime-tokio", "tls-rustls", "postgres", "uuid", "chrono", "json"] }
-utoipa = { version = "3.5.0", features = ["actix_extras"] }
-utoipa-swagger-ui = { version = "3.1.5", features = ["actix-web"] }
+utoipa = { version = "5.3.1", features = ["actix_extras"] }
+utoipa-swagger-ui = { version = "9.0.0", features = ["actix-web"] }
 futures-util = "0.3.29"
+
+# Specify the binary target
+[[bin]]
+name = "rust_backend"
+path = "src/main.rs"

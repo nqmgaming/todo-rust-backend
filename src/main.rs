@@ -110,7 +110,7 @@ async fn main() -> std::io::Result<()> {
                     ),
             )
     })
-    .bind(("127.0.0.1", 8080))?;
+    .bind(("0.0.0.0", 8080))?;
 
     info!("Server started at http://127.0.0.1:8080");
     info!("Swagger UI available at http://127.0.0.1:8080/swagger-ui/");

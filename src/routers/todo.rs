@@ -5,7 +5,8 @@ use crate::models::todo::{
     CreateTodoRequest, GetTodoURL, TodoQueryParams, TodoResponse, UpdateTodoRequest, UpdateTodoURL,
 };
 use crate::swagger::{
-    ApiResponseDeleteTodoResponse, ApiResponseTodoResponse, ApiResponseTodoResponseList,
+    ApiResponseDeleteTodoResponse, ApiResponseEmpty, ApiResponseTodoResponse,
+    ApiResponseTodoResponseList,
 };
 use actix_web::http::StatusCode;
 use actix_web::web::{Data, Json, Path, Query};
@@ -36,8 +37,8 @@ impl IntoParams for TodoQueryParams {
                 param.schema = Some(utoipa::openapi::RefOr::T(
                     utoipa::openapi::schema::Schema::Object(
                         utoipa::openapi::schema::ObjectBuilder::new()
-                            .schema_type(utoipa::openapi::schema::SchemaType::Integer)
-                            .example(Some(serde_json::json!(1)))
+                            .schema_type(utoipa::openapi::schema::Type::Integer)
+                            .examples(Some(vec![serde_json::json!(1)]))
                             .build(),
                     ),
                 ));
@@ -50,8 +51,8 @@ impl IntoParams for TodoQueryParams {
                 param.schema = Some(utoipa::openapi::RefOr::T(
                     utoipa::openapi::schema::Schema::Object(
                         utoipa::openapi::schema::ObjectBuilder::new()
-                            .schema_type(utoipa::openapi::schema::SchemaType::Integer)
-                            .example(Some(serde_json::json!(10)))
+                            .schema_type(utoipa::openapi::schema::Type::Integer)
+                            .examples(Some(vec![serde_json::json!(10)]))
                             .build(),
                     ),
                 ));
@@ -65,8 +66,8 @@ impl IntoParams for TodoQueryParams {
                 param.schema = Some(utoipa::openapi::RefOr::T(
                     utoipa::openapi::schema::Schema::Object(
                         utoipa::openapi::schema::ObjectBuilder::new()
-                            .schema_type(utoipa::openapi::schema::SchemaType::String)
-                            .example(Some(serde_json::json!("Rust")))
+                            .schema_type(utoipa::openapi::schema::Type::String)
+                            .examples(Some(vec![serde_json::json!("Rust")]))
                             .build(),
                     ),
                 ));
@@ -79,8 +80,8 @@ impl IntoParams for TodoQueryParams {
                 param.schema = Some(utoipa::openapi::RefOr::T(
                     utoipa::openapi::schema::Schema::Object(
                         utoipa::openapi::schema::ObjectBuilder::new()
-                            .schema_type(utoipa::openapi::schema::SchemaType::Boolean)
-                            .example(Some(serde_json::json!(false)))
+                            .schema_type(utoipa::openapi::schema::Type::Boolean)
+                            .examples(Some(vec![serde_json::json!(false)]))
                             .build(),
                     ),
                 ));
@@ -93,8 +94,8 @@ impl IntoParams for TodoQueryParams {
                 param.schema = Some(utoipa::openapi::RefOr::T(
                     utoipa::openapi::schema::Schema::Object(
                         utoipa::openapi::schema::ObjectBuilder::new()
-                            .schema_type(utoipa::openapi::schema::SchemaType::String)
-                            .example(Some(serde_json::json!("created_at")))
+                            .schema_type(utoipa::openapi::schema::Type::String)
+                            .examples(Some(vec![serde_json::json!("created_at")]))
                             .build(),
                     ),
                 ));
@@ -107,8 +108,8 @@ impl IntoParams for TodoQueryParams {
                 param.schema = Some(utoipa::openapi::RefOr::T(
                     utoipa::openapi::schema::Schema::Object(
                         utoipa::openapi::schema::ObjectBuilder::new()
-                            .schema_type(utoipa::openapi::schema::SchemaType::String)
-                            .example(Some(serde_json::json!("desc")))
+                            .schema_type(utoipa::openapi::schema::Type::String)
+                            .examples(Some(vec![serde_json::json!("desc")]))
                             .build(),
                     ),
                 ));
@@ -139,7 +140,7 @@ impl IntoParams for TodoQueryParams {
         (status = 500, description = "Lỗi máy chủ", body = ApiResponseEmpty)
     )
 )]
-#[get("/todos")]
+#[get("")]
 async fn get_todos(
     req: HttpRequest,
     db: Data<Database>,
@@ -185,7 +186,7 @@ async fn get_todos(
         (status = 500, description = "Lỗi máy chủ", body = ApiResponseEmpty)
     )
 )]
-#[get("/todos/{uuid}")]
+#[get("/{uuid}")]
 async fn get_todo(
     get_todo_url: Path<GetTodoURL>,
     req: HttpRequest,
@@ -222,7 +223,7 @@ async fn get_todo(
         (status = 500, description = "Lỗi máy chủ", body = ApiResponseEmpty)
     )
 )]
-#[post("/todos")]
+#[post("")]
 async fn create_todo(
     body: Json<CreateTodoRequest>,
     req: HttpRequest,
@@ -263,7 +264,7 @@ async fn create_todo(
         (status = 500, description = "Lỗi máy chủ", body = ApiResponseEmpty)
     )
 )]
-#[patch("/todos/{uuid}")]
+#[patch("/{uuid}")]
 async fn update_todo(
     update_todo_url: Path<UpdateTodoURL>,
     body: Json<UpdateTodoRequest>,
@@ -313,7 +314,7 @@ async fn update_todo(
         (status = 500, description = "Lỗi máy chủ", body = ApiResponseEmpty)
     )
 )]
-#[delete("/todos/{uuid}")]
+#[delete("/{uuid}")]
 async fn delete_todo(
     todo_url: Path<GetTodoURL>,
     req: HttpRequest,

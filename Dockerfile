@@ -1,49 +1,40 @@
-# Use the official Rust image as the builder
-FROM rust:slim AS builder
+# Build the Rust application
+FROM rust:latest AS builder
 
-# Create a new empty shell project
-WORKDIR /usr/src/app
+# Set the working directory in the builder stage
+WORKDIR /src
+
+# Install required dependencies
 RUN apt-get update && apt-get install -y pkg-config libssl-dev curl
 
-# Copy over your manifests
-COPY Cargo.toml Cargo.lock ./
-
-# This is a trick to cache dependencies
-# Create a dummy main.rs file
-RUN mkdir -p src && echo "fn main() {}" > src/main.rs
-
-# Build dependencies - this will be cached unless Cargo.toml changes
-RUN cargo build --release
-
-# Remove the dummy file
-RUN rm -rf src
-
-# Copy your source code
+# Copy the entire source code first
 COPY . .
 
-# Build the application
+# Build the application in release mode
 RUN cargo build --release
 
-# Use the same base image for runtime to ensure glibc compatibility
-FROM rust:slim
+# Final image with a compatible glibc version (using debian:bookworm-slim)
+FROM debian:bookworm-slim
 
-# Install only the necessary runtime dependencies
-RUN apt-get update && apt-get install -y --no-install-recommends \
-    libssl-dev ca-certificates \
-    && rm -rf /var/lib/apt/lists/*
-
-# Copy the binary from the builder stage
-COPY --from=builder /usr/src/app/target/release/rust_backend /usr/local/bin/
-
-# Create a non-root user to run the application
-RUN useradd -m appuser
-USER appuser
+# Create a non-root user for running the application
+RUN addgroup --system rust && adduser --system --ingroup rust rust
 
 # Set the working directory
-WORKDIR /home/appuser
+WORKDIR /app
 
-# Expose the port the app runs on
+# Install the required dependencies
+RUN apt-get update && apt-get install -y \
+    libc6 \
+    && rm -rf /var/lib/apt/lists/*
+
+# Copy the compiled application from the builder stage
+COPY --from=builder /src/target/release/rust_backend /usr/local/bin/rust_backend
+
+# Expose the necessary port
 EXPOSE 8080
 
-# Command to run the application
+# Switch to the non-root user
+USER rust
+
+# Run the application
 CMD ["rust_backend"]
