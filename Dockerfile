@@ -1,5 +1,5 @@
 # Use the official Rust image as the builder
-FROM rust:latest AS builder
+FROM rust:slim AS builder
 
 # Create a new empty shell project
 WORKDIR /usr/src/app
@@ -24,11 +24,13 @@ COPY . .
 # Build the application
 RUN cargo build --release
 
-# Use a smaller image for the runtime
-FROM debian:bullseye-slim
+# Use the same base image for runtime to ensure glibc compatibility
+FROM rust:slim
 
-# Install necessary runtime dependencies
-RUN apt-get update && apt-get install -y libssl-dev ca-certificates && rm -rf /var/lib/apt/lists/*
+# Install only the necessary runtime dependencies
+RUN apt-get update && apt-get install -y --no-install-recommends \
+    libssl-dev ca-certificates \
+    && rm -rf /var/lib/apt/lists/*
 
 # Copy the binary from the builder stage
 COPY --from=builder /usr/src/app/target/release/rust_backend /usr/local/bin/
