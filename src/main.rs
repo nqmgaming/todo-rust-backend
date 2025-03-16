@@ -34,30 +34,9 @@ async fn main() -> std::io::Result<()> {
 
     // Set up DATABASE_URL environment variable
     if std::env::var("DATABASE_URL").is_err() {
-        let db_host = std::env::var("DB_HOST").unwrap_or_else(|_| {
-            warn!("DB_HOST not set, using default");
-            "localhost".to_string()
-        });
-        let db_port = std::env::var("DB_PORT").unwrap_or_else(|_| {
-            warn!("DB_PORT not set, using default");
-            "5432".to_string()
-        });
-        let db_name = std::env::var("DB_NAME").unwrap_or_else(|_| {
-            warn!("DB_NAME not set, using default");
-            "postgres".to_string()
-        });
-        let db_user = std::env::var("DB_USER").unwrap_or_else(|_| {
-            warn!("DB_USER not set, using default");
-            "postgres".to_string()
-        });
-        let db_password = std::env::var("DB_PASSWORD").unwrap_or_else(|_| {
-            warn!("DB_PASSWORD not set, using default");
-            "postgres".to_string()
-        });
-
         let database_url = format!(
             "postgres://{}:{}@{}:{}/{}",
-            db_user, db_password, db_host, db_port, db_name
+            "postgres", "postgres", "localhost", "5432", "postgres"
         );
         std::env::set_var("DATABASE_URL", database_url);
         info!("DATABASE_URL set from environment variables");
