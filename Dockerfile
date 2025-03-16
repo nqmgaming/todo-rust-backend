@@ -3,7 +3,7 @@ FROM rust:slim AS builder
 
 # Create a new empty shell project
 WORKDIR /usr/src/app
-RUN apt-get update && apt-get install -y pkg-config libssl-dev
+RUN apt-get update && apt-get install -y pkg-config libssl-dev curl
 
 # Copy over your manifests
 COPY Cargo.toml Cargo.lock ./
