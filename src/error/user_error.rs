@@ -24,10 +24,24 @@ pub enum UserError {
     TokenCreationFailure,
     #[display("Password hashing failed")]
     PasswordHashingFailure,
-    #[display("User not found")]
-    UserNotFound,
     #[display("Invalid credentials")]
     InvalidCredentials,
+    #[display("2FA is required")]
+    TwoFactorRequired,
+    #[display("2FA is already enabled")]
+    TwoFactorAlreadyEnabled,
+    #[display("2FA is not enabled")]
+    TwoFactorNotEnabled,
+    #[display("Invalid 2FA code")]
+    InvalidTwoFactorCode,
+    #[display("Failed to generate 2FA secret")]
+    TwoFactorSecretGenerationFailure,
+    #[display("Failed to generate QR code")]
+    QRCodeGenerationFailure,
+    #[display("Bad request: {}", _0)]
+    BadRequest(String),
+    #[display("Database error: {}", _0)]
+    DatabaseError(String),
 }
 
 impl ResponseError for UserError {
@@ -41,8 +55,15 @@ impl ResponseError for UserError {
             UserError::InvalidRefreshToken => StatusCode::UNAUTHORIZED,
             UserError::TokenCreationFailure => StatusCode::INTERNAL_SERVER_ERROR,
             UserError::PasswordHashingFailure => StatusCode::INTERNAL_SERVER_ERROR,
-            UserError::UserNotFound => StatusCode::NOT_FOUND,
             UserError::InvalidCredentials => StatusCode::UNAUTHORIZED,
+            UserError::TwoFactorRequired => StatusCode::UNAUTHORIZED,
+            UserError::TwoFactorAlreadyEnabled => StatusCode::BAD_REQUEST,
+            UserError::TwoFactorNotEnabled => StatusCode::BAD_REQUEST,
+            UserError::InvalidTwoFactorCode => StatusCode::UNAUTHORIZED,
+            UserError::TwoFactorSecretGenerationFailure => StatusCode::INTERNAL_SERVER_ERROR,
+            UserError::QRCodeGenerationFailure => StatusCode::INTERNAL_SERVER_ERROR,
+            UserError::BadRequest(_) => StatusCode::BAD_REQUEST,
+            UserError::DatabaseError(_) => StatusCode::INTERNAL_SERVER_ERROR,
         }
     }
 

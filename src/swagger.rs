@@ -16,6 +16,11 @@ use utoipa::OpenApi;
         crate::routers::user::login,
         crate::routers::user::refresh_token_endpoint,
         crate::routers::user::update_user,
+        crate::routers::user::enable_2fa,
+        crate::routers::user::verify_2fa,
+        crate::routers::user::disable_2fa,
+        crate::routers::user::generate_backup_codes,
+        crate::routers::user::login_with_backup_code,
     ),
     components(
         schemas(
@@ -40,6 +45,14 @@ use utoipa::OpenApi;
             crate::models::user::UpdateUserRequest,
             crate::models::user::UserResponse,
             crate::models::user::User,
+            crate::models::user::Enable2FARequest,
+            crate::models::user::Enable2FAResponse,
+            crate::models::user::Verify2FARequest,
+            crate::models::user::Verify2FAResponse,
+            crate::models::user::Disable2FARequest,
+            crate::models::user::GenerateBackupCodesResponse,
+            crate::models::user::VerifyBackupCodeRequest,
+            crate::models::user::UseBackupCodeForLoginRequest,
             crate::routers::user::Claims
         ),
     ),
