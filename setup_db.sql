@@ -3,13 +3,16 @@
 -- Create users table if not exists
 CREATE TABLE IF NOT EXISTS users
 (
-    id         SERIAL PRIMARY KEY,
-    uuid       VARCHAR(255) UNIQUE      NOT NULL,
-    email      VARCHAR(255)             NOT NULL UNIQUE,
-    name       VARCHAR(255)             NOT NULL,
-    password   VARCHAR(255)             NOT NULL,
-    created_at TIMESTAMP WITH TIME ZONE NOT NULL,
-    updated_at TIMESTAMP WITH TIME ZONE NOT NULL
+    id                 SERIAL PRIMARY KEY,
+    uuid               VARCHAR(255) UNIQUE      NOT NULL,
+    email              VARCHAR(255)             NOT NULL UNIQUE,
+    name               VARCHAR(255)             NOT NULL,
+    password           VARCHAR(255)             NOT NULL,
+    two_factor_enabled BOOLEAN                  NOT NULL DEFAULT FALSE,
+    two_factor_secret  TEXT,
+    backup_codes       TEXT[]                            DEFAULT NULL,
+    created_at         TIMESTAMP WITH TIME ZONE NOT NULL,
+    updated_at         TIMESTAMP WITH TIME ZONE NOT NULL
 );
 
 -- Create todos table if not exists

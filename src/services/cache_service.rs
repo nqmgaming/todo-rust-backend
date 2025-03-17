@@ -14,6 +14,5 @@ pub trait CacheService {
 
     async fn delete_cached(&self, key: &str) -> Result<(), RedisError>;
 
-    /// Xóa tất cả các key khớp với pattern
     async fn delete_cached_by_pattern(&self, pattern: &str) -> Result<u64, RedisError>;
 }

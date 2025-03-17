@@ -134,7 +134,6 @@ impl From<User> for UserResponseWithoutPassword {
     }
 }
 
-// Các struct mới cho 2FA
 
 #[derive(Validate, Deserialize, Serialize, ToSchema)]
 pub struct Enable2FARequest {
@@ -147,7 +146,9 @@ pub struct Enable2FARequest {
 pub struct Enable2FAResponse {
     #[schema(example = "ABCDEFGHIJKLMNOP")]
     pub secret: String,
-    #[schema(example = "data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAQAAAAEAAQMAAABmvDolAAAABlBMVEX///8AAABVwtN+AAAA")]
+    #[schema(
+        example = "data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAQAAAAEAAQMAAABmvDolAAAABlBMVEX///8AAABVwtN+AAAA"
+    )]
     pub qr_code: String,
     #[schema(example = "2FA enabled successfully")]
     pub message: String,
@@ -178,7 +179,6 @@ pub struct Disable2FARequest {
     pub code: String,
 }
 
-// Các struct mới cho backup codes
 
 #[derive(Deserialize, Serialize, ToSchema)]
 pub struct GenerateBackupCodesResponse {
@@ -203,4 +203,3 @@ pub struct UseBackupCodeForLoginRequest {
     #[schema(example = "abcdefghij")]
     pub backup_code: String,
 }
-

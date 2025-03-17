@@ -368,14 +368,11 @@ pub async fn update_user(
     body.validate()
         .map_err(|e| UserError::ValidationError(e.to_string()))?;
 
-    // Lấy thông tin người dùng hiện tại
     let user = db.get_user_by_uuid(&update_user_url.uuid).await?;
 
-    // Cập nhật thông tin
     let mut updated_user = user.clone();
     updated_user.email = body.email.clone();
 
-    // Lưu vào cơ sở dữ liệu
     let result = db.update_user(&updated_user).await?;
 
     Ok(Json(result))

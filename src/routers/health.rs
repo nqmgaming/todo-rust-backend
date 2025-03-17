@@ -30,6 +30,7 @@ pub fn health_routes(cfg: &mut web::ServiceConfig) {
 /// - Phiên bản hiện tại
 /// - Thời gian hiện tại
 /// - Trạng thái kết nối cơ sở dữ liệu
+/// - Trạng thái kết nối Redis
 #[utoipa::path(
     get,
     path = "/api/health",

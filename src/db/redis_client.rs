@@ -124,10 +124,10 @@ impl CacheService for RedisClient {
 
     async fn delete_cached_by_pattern(&self, pattern: &str) -> Result<u64, RedisError> {
         let mut conn = self.get_conn().await?;
-        
+
         let mut cursor = 0;
         let mut deleted_count = 0;
-        
+
         loop {
             let scan_result: (i64, Vec<String>) = redis::cmd("SCAN")
                 .arg(cursor)
@@ -137,25 +137,25 @@ impl CacheService for RedisClient {
                 .arg(100)
                 .query_async(&mut conn)
                 .await?;
-                
+
             cursor = scan_result.0;
             let keys = scan_result.1;
-            
+
             if !keys.is_empty() {
-                let del_count: i64 = redis::cmd("DEL")
-                    .arg(keys)
-                    .query_async(&mut conn)
-                    .await?;
-                    
+                let del_count: i64 = redis::cmd("DEL").arg(keys).query_async(&mut conn).await?;
+
                 deleted_count += del_count as u64;
             }
-            
+
             if cursor == 0 {
                 break;
             }
         }
-        
-        info!("Deleted {} keys matching pattern: {}", deleted_count, pattern);
+
+        info!(
+            "Deleted {} keys matching pattern: {}",
+            deleted_count, pattern
+        );
         Ok(deleted_count)
     }
 }
