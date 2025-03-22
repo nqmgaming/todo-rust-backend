@@ -4,7 +4,6 @@ mod middleware;
 mod models;
 mod routers;
 mod services;
-mod swagger;
 
 use actix_cors::Cors;
 use actix_web::http::header;
@@ -16,9 +15,6 @@ use env_logger::Env;
 use log::{info, warn};
 use middleware::auth::{validator, TodoOwnershipChecker};
 use routers::{health::health_routes, todo::todo_routes, user::user_routes};
-use swagger::ApiDoc;
-use utoipa::OpenApi;
-use utoipa_swagger_ui::SwaggerUi;
 
 #[actix_web::main]
 async fn main() -> std::io::Result<()> {
@@ -81,10 +77,6 @@ async fn main() -> std::io::Result<()> {
             .wrap(cors)
             .wrap(Logger::new("%a %r %s %b %{Referer}i %{User-Agent}i %T"))
             .app_data(db_data.clone())
-            .service(
-                SwaggerUi::new("/swagger-ui/{_:.*}")
-                    .url("/api-docs/openapi.json", ApiDoc::openapi()),
-            )
             .service(
                 actix_web::web::scope("/api")
                     .configure(health_routes)

@@ -34,8 +34,6 @@ pub enum UserError {
     TwoFactorNotEnabled,
     #[display("Invalid 2FA code")]
     InvalidTwoFactorCode,
-    #[display("Failed to generate 2FA secret")]
-    TwoFactorSecretGenerationFailure,
     #[display("Failed to generate QR code")]
     QRCodeGenerationFailure,
     #[display("Bad request: {}", _0)]
@@ -60,7 +58,6 @@ impl ResponseError for UserError {
             UserError::TwoFactorAlreadyEnabled => StatusCode::BAD_REQUEST,
             UserError::TwoFactorNotEnabled => StatusCode::BAD_REQUEST,
             UserError::InvalidTwoFactorCode => StatusCode::UNAUTHORIZED,
-            UserError::TwoFactorSecretGenerationFailure => StatusCode::INTERNAL_SERVER_ERROR,
             UserError::QRCodeGenerationFailure => StatusCode::INTERNAL_SERVER_ERROR,
             UserError::BadRequest(_) => StatusCode::BAD_REQUEST,
             UserError::DatabaseError(_) => StatusCode::INTERNAL_SERVER_ERROR,

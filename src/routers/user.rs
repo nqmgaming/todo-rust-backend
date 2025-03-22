@@ -20,7 +20,6 @@ use chrono::Utc;
 use jsonwebtoken::{decode, DecodingKey, Validation};
 use serde::{Deserialize, Serialize};
 use tokio;
-use utoipa::ToSchema;
 use uuid::Uuid;
 use validator::Validate;
 
@@ -38,15 +37,11 @@ pub fn user_routes(cfg: &mut actix_web::web::ServiceConfig) {
 const HASH_COST: u32 = 8;
 const USER_CACHE_TTL: u64 = 3600;
 
-#[derive(Debug, Serialize, Deserialize, ToSchema)]
+#[derive(Debug, Serialize, Deserialize)]
 pub struct Claims {
-    #[schema(example = "550e8400-e29b-41d4-a716-446655440000")]
     pub sub: String,
-    #[schema(example = "1633027200")]
     pub exp: usize,
-    #[schema(example = "access")]
     pub token_type: String,
-    #[schema(example = "550e8400-e29b-41d4-a716-446655440000")]
     pub user_id: Option<String>,
 }
 
@@ -124,21 +119,6 @@ async fn validate_refresh_token(
     }
 }
 
-/// Đăng ký người dùng mới
-///
-/// Endpoint này cho phép đăng ký một người dùng mới với tên người dùng và mật khẩu.
-#[utoipa::path(
-    post,
-    path = "/api/v1/users",
-    request_body = CreateUserRequest,
-    responses(
-        (status = 201, description = "User created successfully", body = UserResponse),
-        (status = 400, description = "Invalid data"),
-        (status = 409, description = "User already exists"),
-        (status = 500, description = "Internal server error"),
-    ),
-    tag = "User"
-)]
 #[post("/register")]
 pub async fn register(
     body: Json<CreateUserRequest>,
@@ -203,22 +183,6 @@ pub async fn register(
     Ok(Json(user_response))
 }
 
-/// Đăng nhập người dùng
-///
-/// Endpoint này cho phép người dùng đăng nhập với tên người dùng và mật khẩu.
-#[utoipa::path(
-    post,
-    path = "/api/v1/login",
-    request_body = LoginRequest,
-    responses(
-        (status = 200, description = "Login successful", body = UserResponse),
-        (status = 400, description = "Invalid data"),
-        (status = 401, description = "Invalid credentials"),
-        (status = 404, description = "User not found"),
-        (status = 500, description = "Internal server error"),
-    ),
-    tag = "User"
-)]
 #[post("/login")]
 pub async fn login(
     body: Json<LoginRequest>,
@@ -306,21 +270,6 @@ pub async fn login(
     Ok(Json(user_response))
 }
 
-/// Làm mới token
-///
-/// Endpoint này cho phép làm mới access token bằng refresh token.
-#[utoipa::path(
-    post,
-    path = "/api/v1/refresh",
-    request_body = RefreshTokenRequest,
-    responses(
-        (status = 200, description = "Token refreshed successfully", body = TokenResponse),
-        (status = 401, description = "Invalid refresh token"),
-        (status = 404, description = "User not found"),
-        (status = 500, description = "Internal server error"),
-    ),
-    tag = "User"
-)]
 #[post("/refresh")]
 pub async fn refresh_token_endpoint(
     db: Data<Database>,
@@ -340,24 +289,6 @@ pub async fn refresh_token_endpoint(
     }))
 }
 
-/// Cập nhật thông tin người dùng
-///
-/// Endpoint này cho phép cập nhật thông tin của người dùng.
-#[utoipa::path(
-    patch,
-    path = "/api/v1/users/{uuid}",
-    tag = "users",
-    params(
-        ("uuid" = String, Path, description = "UUID của người dùng cần cập nhật")
-    ),
-    request_body = UpdateUserRequest,
-    responses(
-        (status = 200, description = "User updated successfully", body = UserResponse),
-        (status = 400, description = "Invalid data"),
-        (status = 404, description = "User not found"),
-        (status = 500, description = "Internal server error"),
-    )
-)]
 #[patch("/users/{uuid}")]
 pub async fn update_user(
     update_user_url: Path<UpdateUserURL>,
@@ -378,24 +309,6 @@ pub async fn update_user(
     Ok(Json(result))
 }
 
-/// Enable 2FA for a user
-///
-/// Endpoint này cho phép bật 2FA cho người dùng.
-#[utoipa::path(
-    post,
-    path = "/api/v1/users/{uuid}/enable-2fa",
-    tag = "users",
-    params(
-        ("uuid" = String, Path, description = "UUID của người dùng cần bật 2FA")
-    ),
-    request_body = Enable2FARequest,
-    responses(
-        (status = 200, description = "2FA enabled successfully", body = Enable2FAResponse),
-        (status = 400, description = "Invalid data"),
-        (status = 404, description = "User not found"),
-        (status = 500, description = "Internal server error"),
-    )
-)]
 #[post("/users/{uuid}/enable-2fa")]
 pub async fn enable_2fa(
     uuid: Path<String>,
@@ -434,24 +347,6 @@ pub async fn enable_2fa(
     Ok(Json(response))
 }
 
-/// Disable 2FA for a user
-///
-/// Endpoint này cho phép tắt 2FA cho người dùng.
-#[utoipa::path(
-    post,
-    path = "/api/v1/users/{uuid}/disable-2fa",
-    tag = "users",
-    params(
-        ("uuid" = String, Path, description = "UUID của người dùng cần tắt 2FA")
-    ),
-    request_body = Disable2FARequest,
-    responses(
-        (status = 200, description = "2FA disabled successfully", body = Verify2FAResponse),
-        (status = 400, description = "Invalid data"),
-        (status = 404, description = "User not found"),
-        (status = 500, description = "Internal server error"),
-    )
-)]
 #[post("/users/{uuid}/disable-2fa")]
 pub async fn disable_2fa(
     uuid: Path<String>,
@@ -492,24 +387,6 @@ pub async fn disable_2fa(
     Ok(Json(response))
 }
 
-/// Verify 2FA for a user
-///
-/// Endpoint này cho phép xác minh 2FA cho người dùng.
-#[utoipa::path(
-    post,
-    path = "/api/v1/users/{uuid}/verify-2fa",
-    tag = "users",
-    params(
-        ("uuid" = String, Path, description = "UUID của người dùng cần xác minh 2FA")
-    ),
-    request_body = Verify2FARequest,
-    responses(
-        (status = 200, description = "2FA verified successfully", body = Verify2FAResponse),
-        (status = 400, description = "Invalid data"),
-        (status = 404, description = "User not found"),
-        (status = 500, description = "Internal server error"),
-    )
-)]
 #[post("/users/{uuid}/verify-2fa")]
 pub async fn verify_2fa(
     uuid: Path<String>,
@@ -542,25 +419,6 @@ pub async fn verify_2fa(
     Ok(Json(response))
 }
 
-/// Tạo mã backup cho 2FA
-///
-/// Endpoint này tạo các mã backup dùng một lần cho xác thực hai yếu tố.
-#[utoipa::path(
-    post,
-    path = "/api/v1/users/{uuid}/2fa/backup-codes",
-    request_body = Verify2FARequest,
-    params(
-        ("uuid" = String, Path, description = "User UUID"),
-    ),
-    responses(
-        (status = 200, description = "Backup codes generated successfully", body = GenerateBackupCodesResponse),
-        (status = 400, description = "Invalid data"),
-        (status = 401, description = "Unauthorized"),
-        (status = 404, description = "User not found"),
-        (status = 500, description = "Internal server error"),
-    ),
-    tag = "User"
-)]
 #[post("/users/{uuid}/2fa/backup-codes")]
 pub async fn generate_backup_codes(
     uuid: Path<String>,
@@ -616,22 +474,6 @@ pub async fn generate_backup_codes(
     }))
 }
 
-/// Đăng nhập với mã backup
-///
-/// Endpoint này cho phép đăng nhập bằng mã backup thay vì mã TOTP.
-#[utoipa::path(
-    post,
-    path = "/api/v1/login/backup",
-    request_body = UseBackupCodeForLoginRequest,
-    responses(
-        (status = 200, description = "Login successful", body = UserResponse),
-        (status = 400, description = "Invalid data"),
-        (status = 401, description = "Unauthorized"),
-        (status = 404, description = "User not found"),
-        (status = 500, description = "Internal server error"),
-    ),
-    tag = "User"
-)]
 #[post("/login/backup")]
 pub async fn login_with_backup_code(
     body: Json<UseBackupCodeForLoginRequest>,

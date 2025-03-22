@@ -116,12 +116,6 @@ impl CacheService for RedisClient {
         Ok(())
     }
 
-    async fn delete_cached(&self, key: &str) -> Result<(), RedisError> {
-        let mut conn = self.get_conn().await?;
-        let _: () = redis::cmd("DEL").arg(key).query_async(&mut conn).await?;
-        Ok(())
-    }
-
     async fn delete_cached_by_pattern(&self, pattern: &str) -> Result<u64, RedisError> {
         let mut conn = self.get_conn().await?;
 

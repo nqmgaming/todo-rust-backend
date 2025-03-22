@@ -1,21 +1,15 @@
 use crate::db::database::Database;
-use crate::swagger::ApiResponseHealthResponse;
 use actix_web::{get, web, HttpResponse};
 use serde::{Deserialize, Serialize};
 use std::time::{SystemTime, UNIX_EPOCH};
-use utoipa::ToSchema;
+use crate::models::app::ApiResponseHealthResponse;
 
-#[derive(Serialize, Deserialize, ToSchema)]
+#[derive(Serialize, Deserialize)]
 pub struct HealthResponse {
-    #[schema(example = "ok")]
     pub status: String,
-    #[schema(example = "1.0.0")]
     pub version: String,
-    #[schema(example = "1633027200")]
     pub timestamp: u64,
-    #[schema(example = "connected")]
     pub database: String,
-    #[schema(example = "connected")]
     pub redis: String,
 }
 
@@ -23,22 +17,7 @@ pub fn health_routes(cfg: &mut web::ServiceConfig) {
     cfg.service(health);
 }
 
-/// Kiểm tra trạng thái hoạt động của API
-///
-/// Endpoint này trả về thông tin về trạng thái hoạt động của API, bao gồm:
-/// - Trạng thái chung của API
-/// - Phiên bản hiện tại
-/// - Thời gian hiện tại
-/// - Trạng thái kết nối cơ sở dữ liệu
-/// - Trạng thái kết nối Redis
-#[utoipa::path(
-    get,
-    path = "/api/health",
-    tag = "health",
-    responses(
-        (status = 200, description = "Trạng thái hoạt động của API", body = ApiResponseHealthResponse)
-    )
-)]
+
 #[get("/health")]
 async fn health(db: web::Data<Database>) -> HttpResponse {
     let db_status = match sqlx::query("SELECT 1").fetch_one(&db.pool).await {

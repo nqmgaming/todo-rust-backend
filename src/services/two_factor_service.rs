@@ -15,8 +15,8 @@ const DEFAULT_BACKUP_CODES_COUNT: usize = 10;
 
 /// Tạo secret key ngẫu nhiên cho 2FA
 pub fn generate_secret() -> String {
-    let mut rng = rand::thread_rng();
-    let secret: Vec<u8> = (0..16).map(|_| rng.gen::<u8>()).collect();
+    let mut rng = rand::rng();
+    let secret: Vec<u8> = (0..16).map(|_| rng.random::<u8>()).collect();
     BASE32.encode(&secret).trim_end_matches('=').to_string()
 }
 
@@ -57,19 +57,6 @@ fn create_totp(secret: &str) -> Result<TOTP, Box<dyn std::error::Error>> {
     Ok(totp)
 }
 
-/// Tạo mã TOTP từ secret
-pub fn generate_totp(secret: &str) -> Result<String, Box<dyn std::error::Error>> {
-    let totp = create_totp(secret)?;
-
-    let current_time = SystemTime::now()
-        .duration_since(UNIX_EPOCH)
-        .map_err(|e| format!("Lỗi lấy thời gian: {}", e))?;
-
-    let token = totp.generate(current_time.as_secs());
-
-    Ok(token)
-}
-
 /// Xác thực mã TOTP
 pub fn verify_totp(secret: &str, code: &str) -> Result<bool, Box<dyn std::error::Error>> {
     let totp = create_totp(secret)?;
@@ -101,7 +88,7 @@ pub fn verify_totp(secret: &str, code: &str) -> Result<bool, Box<dyn std::error:
 /// Trả về danh sách các mã backup dạng plain text và danh sách các mã đã được hash
 pub fn generate_backup_codes(count: Option<usize>) -> (Vec<String>, Vec<String>) {
     let count = count.unwrap_or(DEFAULT_BACKUP_CODES_COUNT);
-    let mut rng = rand::thread_rng();
+    let mut rng = rand::rng();
     let mut plain_codes = Vec::with_capacity(count);
     let mut hashed_codes = Vec::with_capacity(count);
 
@@ -109,7 +96,7 @@ pub fn generate_backup_codes(count: Option<usize>) -> (Vec<String>, Vec<String>)
         // Tạo mã ngẫu nhiên với các ký tự chữ và số
         let code: String = (0..BACKUP_CODE_LENGTH)
             .map(|_| {
-                let idx = rng.gen_range(0..36);
+                let idx = rng.random_range(0..36);
                 if idx < 10 {
                     // Số 0-9
                     (b'0' + idx as u8) as char

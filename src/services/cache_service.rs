@@ -11,8 +11,6 @@ pub trait CacheService {
     async fn set_cached<T>(&self, key: &str, value: &T, ttl_seconds: u64) -> Result<(), RedisError>
     where
         T: Serialize + Send + Sync;
-
-    async fn delete_cached(&self, key: &str) -> Result<(), RedisError>;
-
+    
     async fn delete_cached_by_pattern(&self, pattern: &str) -> Result<u64, RedisError>;
 }

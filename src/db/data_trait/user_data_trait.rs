@@ -14,10 +14,6 @@ pub trait UserData {
     async fn enable_2fa(&self, uuid: &str, secret: &str) -> Result<(), UserError>;
     async fn verify_2fa(&self, uuid: &str) -> Result<(), UserError>;
     async fn disable_2fa(&self, uuid: &str) -> Result<(), UserError>;
-    async fn get_2fa_secret(&self, uuid: &str) -> Result<Option<String>, UserError>;
-    async fn is_2fa_enabled(&self, uuid: &str) -> Result<bool, UserError>;
-    async fn set_backup_codes(&self, uuid: &str, backup_codes: &[String]) -> Result<(), UserError>;
-    async fn get_backup_codes(&self, uuid: &str) -> Result<Option<Vec<String>>, UserError>;
 }
 
 #[async_trait]
@@ -213,74 +209,6 @@ impl UserData for Database {
             Err(e) => {
                 eprintln!("Error disabling 2FA: {:?}", e);
                 Err(UserError::NoSuchUserFound)
-            }
-        }
-    }
-
-    async fn get_2fa_secret(&self, uuid: &str) -> Result<Option<String>, UserError> {
-        let query = "SELECT two_factor_secret FROM users WHERE uuid = $1";
-
-        match sqlx::query(query)
-            .bind(uuid)
-            .fetch_optional(&self.pool)
-            .await
-        {
-            Ok(Some(row)) => Ok(row.get("two_factor_secret")),
-            Ok(None) => Ok(None),
-            Err(e) => {
-                eprintln!("Error getting 2FA secret: {:?}", e);
-                Err(UserError::NoSuchUserFound)
-            }
-        }
-    }
-
-    async fn is_2fa_enabled(&self, uuid: &str) -> Result<bool, UserError> {
-        let query = "SELECT two_factor_enabled FROM users WHERE uuid = $1";
-
-        match sqlx::query(query)
-            .bind(uuid)
-            .fetch_optional(&self.pool)
-            .await
-        {
-            Ok(Some(row)) => Ok(row.get("two_factor_enabled")),
-            Ok(None) => Err(UserError::NoSuchUserFound),
-            Err(e) => {
-                eprintln!("Error checking 2FA status: {:?}", e);
-                Err(UserError::NoSuchUserFound)
-            }
-        }
-    }
-
-    async fn set_backup_codes(&self, uuid: &str, backup_codes: &[String]) -> Result<(), UserError> {
-        let query = "UPDATE users SET backup_codes = $1, updated_at = NOW() WHERE uuid = $2";
-
-        match sqlx::query(query)
-            .bind(backup_codes)
-            .bind(uuid)
-            .execute(&self.pool)
-            .await
-        {
-            Ok(_) => Ok(()),
-            Err(e) => {
-                eprintln!("Error setting backup codes: {:?}", e);
-                Err(UserError::DatabaseError(e.to_string()))
-            }
-        }
-    }
-
-    async fn get_backup_codes(&self, uuid: &str) -> Result<Option<Vec<String>>, UserError> {
-        let query = "SELECT backup_codes FROM users WHERE uuid = $1";
-
-        match sqlx::query(query)
-            .bind(uuid)
-            .fetch_optional(&self.pool)
-            .await
-        {
-            Ok(Some(row)) => Ok(row.get("backup_codes")),
-            Ok(None) => Err(UserError::NoSuchUserFound),
-            Err(e) => {
-                eprintln!("Error getting backup codes: {:?}", e);
-                Err(UserError::DatabaseError(e.to_string()))
             }
         }
     }
