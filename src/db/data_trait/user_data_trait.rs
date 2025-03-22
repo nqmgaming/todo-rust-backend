@@ -4,13 +4,12 @@ use crate::models::user::{CreateUserRequest, User};
 use async_trait::async_trait;
 use chrono::Utc;
 use sqlx::Row;
-use uuid::Uuid;
 
 #[async_trait]
 pub trait UserData {
     async fn get_user_by_email(&self, email: &str) -> Result<User, UserError>;
     async fn get_user_by_uuid(&self, uuid: &str) -> Result<User, UserError>;
-    async fn create_user(&self, user: &CreateUserRequest) -> Result<User, UserError>;
+    async fn create_user(&self, uuid: &str, user: &CreateUserRequest) -> Result<User, UserError>;
     async fn update_user(&self, user: &User) -> Result<User, UserError>;
     async fn enable_2fa(&self, uuid: &str, secret: &str) -> Result<(), UserError>;
     async fn verify_2fa(&self, uuid: &str) -> Result<(), UserError>;
@@ -77,7 +76,7 @@ impl UserData for Database {
         }
     }
 
-    async fn create_user(&self, user: &CreateUserRequest) -> Result<User, UserError> {
+    async fn create_user(&self, uuid: &str, user: &CreateUserRequest) -> Result<User, UserError> {
         // Check if user already exists
         let check_query = "SELECT uuid FROM users WHERE email = $1";
 
@@ -90,8 +89,6 @@ impl UserData for Database {
             Ok(Some(_)) => Err(UserError::UserAlreadyExists),
             Ok(None) => {
                 let now = Utc::now();
-                let uuid = Uuid::new_v4().to_string();
-
                 // Insert new user
                 let insert_query = "INSERT INTO users (uuid, email, name, password, created_at, updated_at, two_factor_enabled) VALUES ($1, $2, $3, $4, $5, $6, $7)";
 
@@ -102,12 +99,12 @@ impl UserData for Database {
                     .bind(&user.password)
                     .bind(now)
                     .bind(now)
-                    .bind(false) // two_factor_enabled mặc định là false
+                    .bind(false)
                     .execute(&self.pool)
                     .await
                 {
                     Ok(_) => Ok(User {
-                        uuid: uuid,
+                        uuid: uuid.to_string(),
                         email: user.email.clone(),
                         name: user.name.clone(),
                         password: user.password.clone(),

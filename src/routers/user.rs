@@ -169,7 +169,7 @@ pub async fn register(
     };
 
     // Save user to database
-    db.create_user(&user).await?;
+    db.create_user(&new_uuid, &user).await?;
 
     // Generate token pair
     let (access_token, refresh_token_str) =
@@ -196,7 +196,7 @@ pub async fn register(
 
     let user_response = UserResponse {
         user: new_user.into(),
-        access_token: access_token,
+        access_token,
         refresh_token: refresh_token_str,
         token_type: "Bearer".to_string(),
     };
@@ -298,7 +298,7 @@ pub async fn login(
 
     let user_response = UserResponse {
         user: user.into(),
-        access_token: access_token,
+        access_token,
         refresh_token: refresh_token_str,
         token_type: "Bearer".to_string(),
     };
