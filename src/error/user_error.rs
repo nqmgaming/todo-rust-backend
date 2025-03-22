@@ -40,6 +40,8 @@ pub enum UserError {
     BadRequest(String),
     #[display("Database error: {}", _0)]
     DatabaseError(String),
+    InvalidSession,
+    TooManyAttempts,
 }
 
 impl ResponseError for UserError {
@@ -61,6 +63,8 @@ impl ResponseError for UserError {
             UserError::QRCodeGenerationFailure => StatusCode::INTERNAL_SERVER_ERROR,
             UserError::BadRequest(_) => StatusCode::BAD_REQUEST,
             UserError::DatabaseError(_) => StatusCode::INTERNAL_SERVER_ERROR,
+            UserError::InvalidSession => StatusCode::UNAUTHORIZED,
+            UserError::TooManyAttempts => StatusCode::TOO_MANY_REQUESTS,
         }
     }
 

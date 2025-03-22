@@ -2,13 +2,7 @@ use crate::db::data_trait::user_data_trait::UserData;
 use crate::db::database::Database;
 use crate::db::redis_client::RedisClient;
 use crate::error::user_error::UserError;
-use crate::models::user::{
-    CreateUserRequest, Disable2FARequest, Enable2FARequest, Enable2FAResponse,
-    GenerateBackupCodesResponse, LoginRequest, RefreshTokenRequest, TokenResponse,
-    UpdateUserRequest, UpdateUserURL, UseBackupCodeForLoginRequest, User, UserResponse,
-    Verify2FARequest, Verify2FAResponse,
-};
-use crate::services::cache_service::CacheService;
+use crate::models::user::{CreateUserRequest, Disable2FARequest, Enable2FARequest, Enable2FAResponse, GenerateBackupCodesResponse, LoginRequest, LoginResponse, RefreshTokenRequest, TokenResponse, TwoFactorChallengeResponse, UpdateUserRequest, UpdateUserURL, UseBackupCodeForLoginRequest, User, UserResponse, Verify2FARequest, Verify2FAResponse, VerifyOtpRequest};
 use crate::services::token_service::generate_jwt_token;
 use crate::services::two_factor_service;
 use actix_web::{
@@ -22,10 +16,12 @@ use serde::{Deserialize, Serialize};
 use tokio;
 use uuid::Uuid;
 use validator::Validate;
+use crate::services::cache_service::CacheService;
 
 pub fn user_routes(cfg: &mut actix_web::web::ServiceConfig) {
     cfg.service(register)
         .service(login)
+        .service(verify_otp)
         .service(refresh_token_endpoint)
         .service(enable_2fa)
         .service(disable_2fa)
@@ -35,7 +31,6 @@ pub fn user_routes(cfg: &mut actix_web::web::ServiceConfig) {
 }
 
 const HASH_COST: u32 = 8;
-const USER_CACHE_TTL: u64 = 3600;
 
 #[derive(Debug, Serialize, Deserialize)]
 pub struct Claims {
@@ -163,17 +158,6 @@ pub async fn register(
         Utc::now().naive_utc(),
     );
 
-    // Cache user for future logins
-    let cache_key = format!("user:email:{}", body.email);
-    if let Err(e) = db
-        .redis_client
-        .set_cached(&cache_key, &new_user, USER_CACHE_TTL)
-        .await
-    {
-        eprintln!("Failed to cache user: {:?}", e);
-        // Continue even if caching fails
-    }
-
     let user_response = UserResponse {
         user: new_user.into(),
         access_token,
@@ -187,74 +171,52 @@ pub async fn register(
 pub async fn login(
     body: Json<LoginRequest>,
     db: Data<Database>,
-) -> Result<Json<UserResponse>, UserError> {
+) -> Result<Json<LoginResponse>, UserError> {
     // Validate request
     body.validate()
         .map_err(|e| UserError::ValidationError(e.to_string()))?;
 
-    let cache_key = format!("user:email:{}", body.email);
-    let cached_user = db.redis_client.get_cached::<User>(&cache_key).await;
-
-    let user = match cached_user {
-        Ok(Some(user)) => {
-            let password_matches = verify(&body.password, &user.password).map_err(|e| {
-                eprintln!("Password verification error: {:?}", e);
-                UserError::AuthenticationFailure
-            })?;
-
-            if !password_matches {
-                return Err(UserError::InvalidCredentials);
-            }
-            user
-        }
-        _ => {
-            let user = match db.get_user_by_email(&body.email).await {
-                Ok(user) => user,
-                Err(UserError::NoSuchUserFound) => return Err(UserError::InvalidCredentials),
-                Err(e) => return Err(e),
-            };
-
-            let password_matches = verify(&body.password, &user.password).map_err(|e| {
-                eprintln!("Password verification error: {:?}", e);
-                UserError::AuthenticationFailure
-            })?;
-
-            if !password_matches {
-                return Err(UserError::InvalidCredentials);
-            }
-
-            if let Err(e) = db
-                .redis_client
-                .set_cached(&cache_key, &user, USER_CACHE_TTL)
-                .await
-            {
-                eprintln!("Failed to cache user: {:?}", e);
-                // Continue even if caching fails
-            }
-
-            user
-        }
+    let user = match db.get_user_by_email(&body.email).await {
+        Ok(user) => user,
+        Err(UserError::NoSuchUserFound) => return Err(UserError::InvalidCredentials),
+        Err(e) => return Err(e),
     };
 
+    let password_matches = verify(&body.password, &user.password).map_err(|e| {
+        eprintln!("Password verification error: {:?}", e);
+        UserError::AuthenticationFailure
+    })?;
+
+    if !password_matches {
+        return Err(UserError::InvalidCredentials);
+    }
+
     if user.two_factor_enabled {
-        match &body.totp_code {
-            Some(totp_code) => {
-                let secret = match &user.two_factor_secret {
-                    Some(secret) => secret,
-                    None => return Err(UserError::TwoFactorRequired),
-                };
+        // Create a new session ID
+        let session_id = Uuid::new_v4().to_string();
 
-                let is_valid = two_factor_service::verify_totp(secret, totp_code)
-                    .map_err(|_| UserError::InvalidTwoFactorCode)?;
+        // Store session in Redis (30 minutes expiry)
+        let session_data = serde_json::json!({
+            "user_id": user.uuid,
+            "email": user.email,
+            "attempts": 0,
+            "max_attempts": 5,
+            "created_at": Utc::now().timestamp()
+        });
 
-                if !is_valid {
-                    return Err(UserError::InvalidTwoFactorCode);
-                }
-            }
-            None => {
-                return Err(UserError::TwoFactorRequired);
-            }
-        }
+        // Store session data in Redis with 30 minute expiry
+        db.redis_client.set_with_expiry(
+            &format!("2fa_session:{}", session_id),
+            &session_data.to_string(),
+            1800 // 30 minutes in seconds
+        ).await.map_err(|_| UserError::TokenCreationFailure)?;
+
+        // Return 2FA challenge
+        return Ok(Json(LoginResponse::TwoFactorChallenge(TwoFactorChallengeResponse {
+            user_id: user.uuid,
+            session_id,
+            message: "Please enter your authentication code".to_string(),
+        })));
     }
 
     let (access_token, refresh_token_str) =
@@ -267,7 +229,7 @@ pub async fn login(
         token_type: "Bearer".to_string(),
     };
 
-    Ok(Json(user_response))
+    Ok(Json(LoginResponse::FullLogin(user_response)))
 }
 
 #[post("/refresh")]
@@ -478,7 +440,7 @@ pub async fn generate_backup_codes(
 pub async fn login_with_backup_code(
     body: Json<UseBackupCodeForLoginRequest>,
     db: Data<Database>,
-) -> Result<Json<UserResponse>, UserError> {
+) -> Result<Json<LoginResponse>, UserError> {
     let user = db.get_user_by_email(&body.email).await?;
 
     let is_valid = verify(&body.password, &user.password)
@@ -502,7 +464,7 @@ pub async fn login_with_backup_code(
         ));
     }
 
-    let backup_code = body.backup_code.replace("-", ""); // Loại bỏ dấu gạch ngang nếu có
+    let backup_code = body.backup_code.replace("-", "");
     let backup_codes = user.backup_codes.as_ref().unwrap();
     let code_index = two_factor_service::verify_backup_code(&backup_code, backup_codes);
 
@@ -516,13 +478,90 @@ pub async fn login_with_backup_code(
         let (access_token, refresh_token) =
             generate_token_pair(&user.uuid, &db.redis_client).await?;
 
-        Ok(Json(UserResponse {
+        let user_response = UserResponse {
             user: user.into(),
             access_token,
             refresh_token,
             token_type: "Bearer".to_string(),
-        }))
+        };
+
+        Ok(Json(LoginResponse::FullLogin(user_response)))
     } else {
         Err(UserError::BadRequest("Invalid backup code".to_string()))
     }
+}
+
+#[post("/verify-otp")]
+pub async fn verify_otp(
+    body: Json<VerifyOtpRequest>,
+    db: Data<Database>,
+) -> Result<Json<LoginResponse>, UserError> {
+    // Validate request
+    body.validate()
+        .map_err(|e| UserError::ValidationError(e.to_string()))?;
+
+    // Get session data from Redis
+    let session_key = format!("2fa_session:{}", body.session_id);
+    let session_data = db.redis_client.get(&session_key).await
+        .map_err(|_| UserError::InvalidSession)?;
+
+    let session: serde_json::Value = serde_json::from_str(&session_data)
+        .map_err(|_| UserError::InvalidSession)?;
+
+    // Check if session is locked due to too many attempts
+    let attempts = session["attempts"].as_i64().unwrap_or(0);
+    let max_attempts = session["max_attempts"].as_i64().unwrap_or(5);
+
+    if attempts >= max_attempts {
+        return Err(UserError::TooManyAttempts);
+    }
+
+    // Get user from session
+    let user_id = session["user_id"].as_str()
+        .ok_or(UserError::InvalidSession)?;
+
+    let user = db.get_user_by_uuid(user_id).await?;
+
+    // Verify OTP
+    let secret = user.two_factor_secret.as_ref()
+        .ok_or(UserError::TwoFactorNotEnabled)?;
+
+    let is_valid = two_factor_service::verify_totp(secret, &body.otp)
+        .map_err(|_| UserError::InvalidTwoFactorCode)?;
+
+    if !is_valid {
+        // Increment attempt counter
+        let updated_session = serde_json::json!({
+            "user_id": session["user_id"],
+            "email": session["email"],
+            "attempts": attempts + 1,
+            "max_attempts": max_attempts,
+            "created_at": session["created_at"]
+        });
+
+        db.redis_client.set_with_expiry(
+            &session_key,
+            &updated_session.to_string(),
+            1800 // Keep the same expiry
+        ).await.map_err(|_| UserError::TokenCreationFailure)?;
+
+        return Err(UserError::InvalidTwoFactorCode);
+    }
+
+    // OTP is valid, delete session
+    db.redis_client.del(&session_key).await
+        .map_err(|_| UserError::TokenCreationFailure)?;
+
+    // Generate token pair
+    let (access_token, refresh_token_str) =
+        generate_token_pair(&user.uuid, &db.redis_client).await?;
+
+    let user_response = UserResponse {
+        user: user.into(),
+        access_token,
+        refresh_token: refresh_token_str,
+        token_type: "Bearer".to_string(),
+    };
+
+    Ok(Json(LoginResponse::FullLogin(user_response)))
 }

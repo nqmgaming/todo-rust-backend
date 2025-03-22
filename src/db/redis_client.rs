@@ -1,7 +1,7 @@
 use crate::services::cache_service::CacheService;
 use async_trait::async_trait;
 use log::info;
-use redis::{aio::ConnectionManager, Client, RedisError};
+use redis::{aio::ConnectionManager, AsyncCommands, Client, RedisError};
 use serde::{de::DeserializeOwned, Serialize};
 use std::sync::Arc;
 use tokio::sync::Mutex;
@@ -151,5 +151,23 @@ impl CacheService for RedisClient {
             deleted_count, pattern
         );
         Ok(deleted_count)
+    }
+
+     async fn set_with_expiry(&self, key: &str, value: &str, expiry_seconds: u64) -> Result<(), RedisError> {
+        let mut conn = self.get_conn().await?;
+        conn.set_ex(key, value, expiry_seconds).await?;
+        Ok(())
+    }
+
+     async fn get(&self, key: &str) -> Result<String, RedisError> {
+        let mut conn = self.get_conn().await?;
+        let value: String = conn.get(key).await?;
+        Ok(value)
+    }
+
+     async fn del(&self, key: &str) -> Result<(), RedisError> {
+        let mut conn = self.get_conn().await?;
+        conn.del(key).await?;
+        Ok(())
     }
 }

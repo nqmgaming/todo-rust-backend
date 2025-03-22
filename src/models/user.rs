@@ -160,3 +160,24 @@ pub struct UseBackupCodeForLoginRequest {
     pub password: String,
     pub backup_code: String,
 }
+
+#[derive(Serialize, Deserialize)]
+pub struct TwoFactorChallengeResponse {
+    pub user_id: String,
+    pub session_id: String,
+    pub message: String,
+}
+
+#[derive(Deserialize, Validate)]
+pub struct VerifyOtpRequest {
+    #[validate(length(min = 6, max = 6))]
+    pub otp: String,
+    pub session_id: String,
+}
+
+#[derive(Serialize)]
+#[serde(untagged)]
+pub enum LoginResponse {
+    FullLogin(UserResponse),
+    TwoFactorChallenge(TwoFactorChallengeResponse),
+}
